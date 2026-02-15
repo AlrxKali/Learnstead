@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'home_screen.dart';
+import 'create_business_screen.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -17,6 +18,7 @@ class _SignupScreenState extends State<SignupScreen> {
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   bool _agreedToTerms = false;
+  String? _selectedRole;
 
   @override
   void dispose() {
@@ -29,10 +31,18 @@ class _SignupScreenState extends State<SignupScreen> {
 
   void _handleSignup() {
     // TODO: Connect to API
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (context) => const HomeScreen()),
-    );
+    if (_selectedRole == 'provider') {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const CreateBusinessScreen()),
+      );
+    } else {
+      // TODO: Parent enrollment screen
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const HomeScreen()),
+      );
+    }
   }
 
   InputDecoration _inputDecoration({
@@ -219,6 +229,61 @@ class _SignupScreenState extends State<SignupScreen> {
                     ),
                   ),
                 ),
+              ),
+              const SizedBox(height: 20),
+
+              // Role dropdown
+              Text(
+                'I am a...',
+                style: GoogleFonts.nunito(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF555555),
+                ),
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                initialValue: _selectedRole,
+                onChanged: (value) => setState(() => _selectedRole = value),
+                style: GoogleFonts.nunito(fontSize: 15, color: const Color(0xFF333333)),
+                icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFFC5D1C9)),
+                decoration: InputDecoration(
+                  hintText: 'Select your role',
+                  hintStyle: GoogleFonts.nunito(
+                    fontSize: 15,
+                    color: const Color(0xFFAAAAAA),
+                  ),
+                  prefixIcon: const Icon(
+                    Icons.badge_outlined,
+                    color: Color(0xFFC5D1C9),
+                    size: 20,
+                  ),
+                  filled: true,
+                  fillColor: const Color(0xFFF7F9F8),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Color(0xFFE0E7E3)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Color(0xFFE0E7E3)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Color(0xFF6F9A84), width: 1.5),
+                  ),
+                ),
+                items: [
+                  DropdownMenuItem(
+                    value: 'parent',
+                    child: Text('Parent', style: GoogleFonts.nunito(fontSize: 15)),
+                  ),
+                  DropdownMenuItem(
+                    value: 'provider',
+                    child: Text('Provider', style: GoogleFonts.nunito(fontSize: 15)),
+                  ),
+                ],
               ),
               const SizedBox(height: 20),
 
