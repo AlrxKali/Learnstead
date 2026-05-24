@@ -32,6 +32,14 @@ class ApiClient {
     return _send('POST', path, body: body, token: token);
   }
 
+  Future<dynamic> putJson(
+    String path,
+    Map<String, dynamic> body, {
+    String? token,
+  }) {
+    return _send('PUT', path, body: body, token: token);
+  }
+
   Future<dynamic> _send(
     String method,
     String path, {
@@ -53,6 +61,11 @@ class ApiClient {
         case 'POST':
           response = await http
               .post(uri, headers: headers, body: jsonEncode(body ?? {}))
+              .timeout(_timeout);
+          break;
+        case 'PUT':
+          response = await http
+              .put(uri, headers: headers, body: jsonEncode(body ?? {}))
               .timeout(_timeout);
           break;
         default:
