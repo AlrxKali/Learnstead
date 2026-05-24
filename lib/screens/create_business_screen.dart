@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../services/api_client.dart';
+import '../services/business_service.dart';
 import 'provider_home_screen.dart';
 
 class CreateBusinessScreen extends StatefulWidget {
@@ -20,16 +22,33 @@ class _CreateBusinessScreenState extends State<CreateBusinessScreen> {
   final _cityController = TextEditingController();
   final _stateController = TextEditingController();
   final _zipController = TextEditingController();
-  String? _selectedCategory;
+  final _businessService = BusinessService();
 
-  static const _categories = [
-    'Tutoring',
-    'Co-op',
-    'Enrichment Program',
-    'Online Course',
-    'Microschool',
-    'Other',
-  ];
+  List<BusinessCategory> _categories = [];
+  String? _selectedCategoryId;
+  bool _categoriesLoading = true;
+  bool _isSubmitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCategories();
+  }
+
+  Future<void> _loadCategories() async {
+    try {
+      final cats = await _businessService.listCategories();
+      if (!mounted) return;
+      setState(() {
+        _categories = cats;
+        _categoriesLoading = false;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _categoriesLoading = false);
+      _showError('Could not load categories: ${e.message}');
+    }
+  }
 
   @override
   void dispose() {
@@ -46,11 +65,44 @@ class _CreateBusinessScreenState extends State<CreateBusinessScreen> {
     super.dispose();
   }
 
-  void _handleCreate() {
-    // TODO: Connect to API
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (context) => const ProviderHomeScreen()),
+  Future<void> _handleCreate() async {
+    final name = _nameController.text.trim();
+    if (name.isEmpty) {
+      _showError('Business name is required.');
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+    try {
+      await _businessService.createBusiness(
+        name: name,
+        description: _descriptionController.text,
+        phone: _phoneController.text,
+        email: _emailController.text,
+        website: _websiteController.text,
+        addressLine1: _address1Controller.text,
+        addressLine2: _address2Controller.text,
+        city: _cityController.text,
+        state: _stateController.text,
+        zipCode: _zipController.text,
+        categoryId: _selectedCategoryId,
+      );
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const ProviderHomeScreen()),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      _showError(e.message);
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: const Color(0xFFB23A48)),
     );
   }
 
@@ -179,12 +231,16 @@ class _CreateBusinessScreenState extends State<CreateBusinessScreen> {
 
               _buildLabel('Category'),
               DropdownButtonFormField<String>(
-                initialValue: _selectedCategory,
-                onChanged: (value) => setState(() => _selectedCategory = value),
+                initialValue: _selectedCategoryId,
+                onChanged: _categoriesLoading
+                    ? null
+                    : (value) => setState(() => _selectedCategoryId = value),
                 style: GoogleFonts.nunito(fontSize: 15, color: const Color(0xFF333333)),
                 icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFFC5D1C9)),
                 decoration: InputDecoration(
-                  hintText: 'Select a category',
+                  hintText: _categoriesLoading
+                      ? 'Loading categories…'
+                      : 'Select a category',
                   hintStyle: GoogleFonts.nunito(fontSize: 15, color: const Color(0xFFAAAAAA)),
                   prefixIcon: const Icon(Icons.category_outlined, color: Color(0xFFC5D1C9), size: 20),
                   filled: true,
@@ -205,8 +261,8 @@ class _CreateBusinessScreenState extends State<CreateBusinessScreen> {
                 ),
                 items: _categories
                     .map((c) => DropdownMenuItem(
-                          value: c,
-                          child: Text(c, style: GoogleFonts.nunito(fontSize: 15)),
+                          value: c.id,
+                          child: Text(c.name, style: GoogleFonts.nunito(fontSize: 15)),
                         ))
                     .toList(),
               ),
@@ -416,7 +472,7 @@ class _CreateBusinessScreenState extends State<CreateBusinessScreen> {
               SizedBox(
                 height: 50,
                 child: ElevatedButton(
-                  onPressed: _handleCreate,
+                  onPressed: _isSubmitting ? null : _handleCreate,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF5D7048),
                     foregroundColor: Colors.white,
@@ -425,13 +481,22 @@ class _CreateBusinessScreenState extends State<CreateBusinessScreen> {
                     ),
                     elevation: 0,
                   ),
-                  child: Text(
-                    'Create Business',
-                    style: GoogleFonts.nunito(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
+                  child: _isSubmitting
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : Text(
+                          'Create Business',
+                          style: GoogleFonts.nunito(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                 ),
               ),
               const SizedBox(height: 32),
