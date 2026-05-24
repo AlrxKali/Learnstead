@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../services/auth_service.dart';
 import 'home_screen.dart';
 import 'create_business_screen.dart';
 
@@ -15,9 +16,11 @@ class _SignupScreenState extends State<SignupScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  final _authService = AuthService();
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   bool _agreedToTerms = false;
+  bool _isSubmitting = false;
   String? _selectedRole;
 
   @override
@@ -29,20 +32,61 @@ class _SignupScreenState extends State<SignupScreen> {
     super.dispose();
   }
 
-  void _handleSignup() {
-    // TODO: Connect to API
-    if (_selectedRole == 'provider') {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const CreateBusinessScreen()),
-      );
-    } else {
-      // TODO: Parent enrollment screen
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const HomeScreen()),
-      );
+  Future<void> _handleSignup() async {
+    final name = _nameController.text.trim();
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+    final confirm = _confirmPasswordController.text;
+
+    if (email.isEmpty || password.isEmpty) {
+      _showError('Please enter an email and password.');
+      return;
     }
+    if (_selectedRole == null) {
+      _showError('Please choose a role.');
+      return;
+    }
+    if (password != confirm) {
+      _showError('Passwords do not match.');
+      return;
+    }
+    if (password.length < 6) {
+      _showError('Password must be at least 6 characters.');
+      return;
+    }
+    if (!_agreedToTerms) {
+      _showError('Please agree to the Terms and Privacy Policy.');
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+    try {
+      final result = await _authService.signup(
+        email: email,
+        password: password,
+        role: _selectedRole!,
+        fullName: name.isEmpty ? null : name,
+      );
+      if (!mounted) return;
+      final destination = result.profile.role == 'provider'
+          ? const CreateBusinessScreen()
+          : const HomeScreen();
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => destination),
+      );
+    } on AuthException catch (e) {
+      if (!mounted) return;
+      _showError(e.message);
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: const Color(0xFFB23A48)),
+    );
   }
 
   InputDecoration _inputDecoration({
@@ -346,7 +390,7 @@ class _SignupScreenState extends State<SignupScreen> {
               SizedBox(
                 height: 50,
                 child: ElevatedButton(
-                  onPressed: _handleSignup,
+                  onPressed: _isSubmitting ? null : _handleSignup,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF5D7048),
                     foregroundColor: Colors.white,
@@ -355,13 +399,22 @@ class _SignupScreenState extends State<SignupScreen> {
                     ),
                     elevation: 0,
                   ),
-                  child: Text(
-                    'Create Account',
-                    style: GoogleFonts.nunito(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
+                  child: _isSubmitting
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : Text(
+                          'Create Account',
+                          style: GoogleFonts.nunito(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                 ),
               ),
               const SizedBox(height: 24),
