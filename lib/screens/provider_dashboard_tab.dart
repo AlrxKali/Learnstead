@@ -1,10 +1,45 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../services/api_client.dart';
+import '../services/business_service.dart';
 
-class ProviderDashboardTab extends StatelessWidget {
+class ProviderDashboardTab extends StatefulWidget {
   final void Function(int tabIndex) onTabSwitch;
 
   const ProviderDashboardTab({super.key, required this.onTabSwitch});
+
+  @override
+  State<ProviderDashboardTab> createState() => _ProviderDashboardTabState();
+}
+
+class _ProviderDashboardTabState extends State<ProviderDashboardTab> {
+  final _businessService = BusinessService();
+  Business? _business;
+  bool _isLoadingBusiness = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBusiness();
+  }
+
+  Future<void> _loadBusiness() async {
+    try {
+      final business = await _businessService.getMyBusiness();
+      if (!mounted) return;
+      setState(() {
+        _business = business;
+        _isLoadingBusiness = false;
+      });
+    } on BusinessNotFoundException {
+      if (!mounted) return;
+      setState(() => _isLoadingBusiness = false);
+    } on ApiException {
+      // Non-fatal for the dashboard; greeting just falls back.
+      if (!mounted) return;
+      setState(() => _isLoadingBusiness = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -37,6 +72,12 @@ class ProviderDashboardTab extends StatelessWidget {
             ? 'Good afternoon'
             : 'Good evening';
 
+    final displayName = _business?.name ??
+        (_isLoadingBusiness ? '…' : 'Your business');
+    final initial = (_business?.name.isNotEmpty ?? false)
+        ? _business!.name[0].toUpperCase()
+        : '?';
+
     return Row(
       children: [
         Expanded(
@@ -53,7 +94,7 @@ class ProviderDashboardTab extends StatelessWidget {
               ),
               const SizedBox(height: 2),
               Text(
-                "Sarah's Learning Studio",
+                displayName,
                 style: GoogleFonts.nunito(
                   fontSize: 22,
                   fontWeight: FontWeight.w800,
@@ -72,7 +113,7 @@ class ProviderDashboardTab extends StatelessWidget {
           ),
           child: Center(
             child: Text(
-              'S',
+              initial,
               style: GoogleFonts.nunito(
                 fontSize: 20,
                 fontWeight: FontWeight.w800,
@@ -149,8 +190,8 @@ class ProviderDashboardTab extends StatelessWidget {
 
   Widget _buildQuickActions() {
     final actions = [
-      _ActionItem('Edit Profile', Icons.edit_outlined, () => onTabSwitch(1)),
-      _ActionItem('New Event', Icons.event_outlined, () => onTabSwitch(3)),
+      _ActionItem('Edit Profile', Icons.edit_outlined, () => widget.onTabSwitch(1)),
+      _ActionItem('New Event', Icons.event_outlined, () => widget.onTabSwitch(3)),
       _ActionItem('Share Link', Icons.share_outlined, () {}),
     ];
 
@@ -222,7 +263,7 @@ class ProviderDashboardTab extends StatelessWidget {
               ),
             ),
             GestureDetector(
-              onTap: () => onTabSwitch(2),
+              onTap: () => widget.onTabSwitch(2),
               child: Text(
                 'View all',
                 style: GoogleFonts.nunito(
@@ -372,7 +413,7 @@ class ProviderDashboardTab extends StatelessWidget {
               ),
             ),
             GestureDetector(
-              onTap: () => onTabSwitch(3),
+              onTap: () => widget.onTabSwitch(3),
               child: Text(
                 'View all',
                 style: GoogleFonts.nunito(
