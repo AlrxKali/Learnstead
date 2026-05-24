@@ -4,14 +4,18 @@ import '../services/api_client.dart';
 import '../services/business_service.dart';
 import 'provider_home_screen.dart';
 
-class CreateBusinessScreen extends StatefulWidget {
-  const CreateBusinessScreen({super.key});
+class BusinessFormScreen extends StatefulWidget {
+  final Business? initial;
+
+  const BusinessFormScreen({super.key, this.initial});
+
+  bool get isEdit => initial != null;
 
   @override
-  State<CreateBusinessScreen> createState() => _CreateBusinessScreenState();
+  State<BusinessFormScreen> createState() => _BusinessFormScreenState();
 }
 
-class _CreateBusinessScreenState extends State<CreateBusinessScreen> {
+class _BusinessFormScreenState extends State<BusinessFormScreen> {
   final _nameController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _phoneController = TextEditingController();
@@ -41,7 +45,28 @@ class _CreateBusinessScreenState extends State<CreateBusinessScreen> {
   @override
   void initState() {
     super.initState();
+    final initial = widget.initial;
+    if (initial != null) {
+      _nameController.text = initial.name;
+      _descriptionController.text = initial.description ?? '';
+      _phoneController.text = initial.phone ?? '';
+      _emailController.text = initial.email ?? '';
+      _websiteController.text = initial.website ?? '';
+      _address1Controller.text = initial.addressLine1 ?? '';
+      _address2Controller.text = initial.addressLine2 ?? '';
+      _cityController.text = initial.city ?? '';
+      _stateController.text = initial.state ?? '';
+      _zipController.text = initial.zipCode ?? '';
+      _minAgeController.text = initial.minAge?.toString() ?? '';
+      _maxAgeController.text = initial.maxAge?.toString() ?? '';
+      _selectedCategoryId = initial.categoryId;
+      _deliveryMode = initial.deliveryMode;
+      _selectedSubcategoryIds.addAll(initial.subcategories.map((s) => s.id));
+    }
     _loadCategories();
+    if (_selectedCategoryId != null) {
+      _loadSubcategories(_selectedCategoryId!);
+    }
   }
 
   Future<void> _loadCategories() async {
@@ -62,6 +87,8 @@ class _CreateBusinessScreenState extends State<CreateBusinessScreen> {
   Future<void> _onCategoryChanged(String? value) async {
     setState(() {
       _selectedCategoryId = value;
+      // Clear current selection when category changes — the suggested
+      // services list will change too.
       _selectedSubcategoryIds.clear();
       _availableSubcategories = [];
     });
@@ -114,7 +141,7 @@ class _CreateBusinessScreenState extends State<CreateBusinessScreen> {
     return parsed;
   }
 
-  Future<void> _handleCreate() async {
+  Future<void> _handleSubmit() async {
     final name = _nameController.text.trim();
     if (name.isEmpty) {
       _showError('Business name is required.');
@@ -151,31 +178,55 @@ class _CreateBusinessScreenState extends State<CreateBusinessScreen> {
 
     setState(() => _isSubmitting = true);
     try {
-      await _businessService.createBusiness(
-        name: name,
-        description: _descriptionController.text,
-        phone: _phoneController.text,
-        email: _emailController.text,
-        website: _websiteController.text,
-        addressLine1: _address1Controller.text,
-        addressLine2: _address2Controller.text,
-        city: _cityController.text,
-        state: _stateController.text,
-        zipCode: _zipController.text,
-        categoryId: _selectedCategoryId,
-        deliveryMode: _deliveryMode,
-        minAge: minAge,
-        maxAge: maxAge,
-      );
-      if (_selectedSubcategoryIds.isNotEmpty) {
+      if (widget.isEdit) {
+        await _businessService.updateMyBusiness(
+          name: name,
+          description: _descriptionController.text,
+          phone: _phoneController.text,
+          email: _emailController.text,
+          website: _websiteController.text,
+          addressLine1: _address1Controller.text,
+          addressLine2: _address2Controller.text,
+          city: _cityController.text,
+          state: _stateController.text,
+          zipCode: _zipController.text,
+          categoryId: _selectedCategoryId,
+          deliveryMode: _deliveryMode,
+          minAge: minAge,
+          maxAge: maxAge,
+        );
+        // Always sync services in edit mode so deselections take effect.
         await _businessService
             .setMySubcategories(_selectedSubcategoryIds.toList());
+        if (!mounted) return;
+        Navigator.pop(context, true);
+      } else {
+        await _businessService.createBusiness(
+          name: name,
+          description: _descriptionController.text,
+          phone: _phoneController.text,
+          email: _emailController.text,
+          website: _websiteController.text,
+          addressLine1: _address1Controller.text,
+          addressLine2: _address2Controller.text,
+          city: _cityController.text,
+          state: _stateController.text,
+          zipCode: _zipController.text,
+          categoryId: _selectedCategoryId,
+          deliveryMode: _deliveryMode,
+          minAge: minAge,
+          maxAge: maxAge,
+        );
+        if (_selectedSubcategoryIds.isNotEmpty) {
+          await _businessService
+              .setMySubcategories(_selectedSubcategoryIds.toList());
+        }
+        if (!mounted) return;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const ProviderHomeScreen()),
+        );
       }
-      if (!mounted) return;
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const ProviderHomeScreen()),
-      );
     } on ApiException catch (e) {
       if (!mounted) return;
       _showError(e.message);
@@ -405,49 +456,68 @@ class _CreateBusinessScreenState extends State<CreateBusinessScreen> {
   @override
   Widget build(BuildContext context) {
     final addressRequired = _deliveryMode != DeliveryMode.online;
+    final isEdit = widget.isEdit;
     return Scaffold(
       backgroundColor: Colors.white,
+      appBar: isEdit
+          ? AppBar(
+              backgroundColor: Colors.white,
+              foregroundColor: const Color(0xFF333333),
+              elevation: 0,
+              title: Text(
+                'Edit your business',
+                style: GoogleFonts.nunito(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFF333333),
+                ),
+              ),
+            )
+          : null,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 28),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const SizedBox(height: 48),
-              Center(
-                child: Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF6F9A84).withAlpha(25),
-                    shape: BoxShape.circle,
+              if (!isEdit) ...[
+                const SizedBox(height: 48),
+                Center(
+                  child: Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF6F9A84).withAlpha(25),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.storefront_outlined,
+                      size: 32,
+                      color: Color(0xFF5D7048),
+                    ),
                   ),
-                  child: const Icon(
-                    Icons.storefront_outlined,
-                    size: 32,
-                    color: Color(0xFF5D7048),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Set up your business',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.nunito(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF333333),
                   ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Set up your business',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.nunito(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w800,
-                  color: const Color(0xFF333333),
+                const SizedBox(height: 6),
+                Text(
+                  'Tell families about your learning services',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.nunito(
+                    fontSize: 14,
+                    color: const Color(0xFF999999),
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Tell families about your learning services',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.nunito(
-                  fontSize: 14,
-                  color: const Color(0xFF999999),
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+              ] else
+                const SizedBox(height: 8),
 
               // --- Basic Info ---
               _buildSectionHeader('Basic Info', Icons.info_outline),
@@ -595,31 +665,20 @@ class _CreateBusinessScreenState extends State<CreateBusinessScreen> {
 
               // --- Address ---
               _buildSectionHeader('Address', Icons.location_on_outlined),
-              if (addressRequired)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(
-                    'City, state, and zip are required for '
-                    '${_deliveryMode.label.toLowerCase()} businesses.',
-                    style: GoogleFonts.nunito(
-                      fontSize: 12,
-                      color: const Color(0xFF999999),
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                )
-              else
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(
-                    'Address is optional for online-only businesses.',
-                    style: GoogleFonts.nunito(
-                      fontSize: 12,
-                      color: const Color(0xFF999999),
-                      fontWeight: FontWeight.w600,
-                    ),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  addressRequired
+                      ? 'City, state, and zip are required for '
+                          '${_deliveryMode.label.toLowerCase()} businesses.'
+                      : 'Address is optional for online-only businesses.',
+                  style: GoogleFonts.nunito(
+                    fontSize: 12,
+                    color: const Color(0xFF999999),
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
+              ),
 
               _buildLabel('Address Line 1'),
               TextField(
@@ -775,7 +834,7 @@ class _CreateBusinessScreenState extends State<CreateBusinessScreen> {
               SizedBox(
                 height: 50,
                 child: ElevatedButton(
-                  onPressed: _isSubmitting ? null : _handleCreate,
+                  onPressed: _isSubmitting ? null : _handleSubmit,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF5D7048),
                     foregroundColor: Colors.white,
@@ -795,7 +854,7 @@ class _CreateBusinessScreenState extends State<CreateBusinessScreen> {
                           ),
                         )
                       : Text(
-                          'Create Business',
+                          isEdit ? 'Save changes' : 'Create Business',
                           style: GoogleFonts.nunito(
                             fontSize: 16,
                             fontWeight: FontWeight.w700,

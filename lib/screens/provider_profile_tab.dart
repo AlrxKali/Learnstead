@@ -4,7 +4,7 @@ import '../services/api_client.dart';
 import '../services/business_service.dart';
 import '../utils/age.dart';
 import '../utils/phone.dart';
-import 'create_business_screen.dart';
+import 'business_form_screen.dart';
 
 class ProviderProfileTab extends StatefulWidget {
   const ProviderProfileTab({super.key});
@@ -15,12 +15,9 @@ class ProviderProfileTab extends StatefulWidget {
 
 class _ProviderProfileTabState extends State<ProviderProfileTab> {
   final _businessService = BusinessService();
-  final _aboutController = TextEditingController();
 
   Business? _business;
   bool _isLoading = true;
-  bool _isSaving = false;
-  bool _isEditing = false;
   bool _notFound = false;
   String? _loadError;
 
@@ -41,7 +38,6 @@ class _ProviderProfileTabState extends State<ProviderProfileTab> {
       if (!mounted) return;
       setState(() {
         _business = business;
-        _aboutController.text = business.description ?? '';
         _isLoading = false;
       });
     } on BusinessNotFoundException {
@@ -59,46 +55,18 @@ class _ProviderProfileTabState extends State<ProviderProfileTab> {
     }
   }
 
-  Future<void> _toggleEditOrSave() async {
-    if (!_isEditing) {
-      setState(() => _isEditing = true);
-      return;
+  Future<void> _openEdit() async {
+    final business = _business;
+    if (business == null) return;
+    final saved = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => BusinessFormScreen(initial: business),
+      ),
+    );
+    if (saved == true && mounted) {
+      _loadBusiness();
     }
-
-    final newDescription = _aboutController.text.trim();
-    if (newDescription == (_business?.description ?? '')) {
-      setState(() => _isEditing = false);
-      return;
-    }
-
-    setState(() => _isSaving = true);
-    try {
-      final updated = await _businessService.updateMyBusiness(
-        description: newDescription,
-      );
-      if (!mounted) return;
-      setState(() {
-        _business = updated;
-        _aboutController.text = updated.description ?? '';
-        _isEditing = false;
-      });
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Could not save: ${e.message}'),
-          backgroundColor: const Color(0xFFB23A48),
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
-    }
-  }
-
-  @override
-  void dispose() {
-    _aboutController.dispose();
-    super.dispose();
   }
 
   @override
@@ -182,7 +150,7 @@ class _ProviderProfileTabState extends State<ProviderProfileTab> {
                 await Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const CreateBusinessScreen(),
+                    builder: (context) => const BusinessFormScreen(),
                   ),
                 );
                 if (!mounted) return;
@@ -334,49 +302,29 @@ class _ProviderProfileTabState extends State<ProviderProfileTab> {
           ),
         ),
         GestureDetector(
-          onTap: _isSaving ? null : _toggleEditOrSave,
+          onTap: _openEdit,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             decoration: BoxDecoration(
-              color: _isEditing
-                  ? const Color(0xFF5D7048)
-                  : const Color(0xFFF7F9F8),
+              color: const Color(0xFFF7F9F8),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: _isEditing
-                    ? const Color(0xFF5D7048)
-                    : const Color(0xFFE0E7E3),
-              ),
+              border: Border.all(color: const Color(0xFFE0E7E3)),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (_isSaving)
-                  const SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                    ),
-                  )
-                else
-                  Icon(
-                    _isEditing ? Icons.check : Icons.edit_outlined,
-                    size: 16,
-                    color: _isEditing
-                        ? Colors.white
-                        : const Color(0xFF555555),
-                  ),
+                const Icon(
+                  Icons.edit_outlined,
+                  size: 16,
+                  color: Color(0xFF555555),
+                ),
                 const SizedBox(width: 6),
                 Text(
-                  _isEditing ? 'Save' : 'Edit',
+                  'Edit',
                   style: GoogleFonts.nunito(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
-                    color: _isEditing
-                        ? Colors.white
-                        : const Color(0xFF555555),
+                    color: const Color(0xFF555555),
                   ),
                 ),
               ],
@@ -425,53 +373,19 @@ class _ProviderProfileTabState extends State<ProviderProfileTab> {
           ),
         ),
         const SizedBox(height: 8),
-        if (_isEditing)
-          TextField(
-            controller: _aboutController,
-            maxLines: 5,
-            style: GoogleFonts.nunito(
-              fontSize: 14,
-              color: const Color(0xFF333333),
-              height: 1.5,
-            ),
-            decoration: InputDecoration(
-              hintText: 'Tell families about your business…',
-              hintStyle: GoogleFonts.nunito(
-                fontSize: 14,
-                color: const Color(0xFFAAAAAA),
-              ),
-              filled: true,
-              fillColor: const Color(0xFFF7F9F8),
-              contentPadding: const EdgeInsets.all(14),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: Color(0xFFE0E7E3)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: Color(0xFFE0E7E3)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide:
-                    const BorderSide(color: Color(0xFF6F9A84), width: 1.5),
-              ),
-            ),
-          )
-        else
-          Text(
-            hasDescription
-                ? _business!.description!
-                : 'No description yet. Tap Edit to add one.',
-            style: GoogleFonts.nunito(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: hasDescription
-                  ? const Color(0xFF555555)
-                  : const Color(0xFFAAAAAA),
-              height: 1.5,
-            ),
+        Text(
+          hasDescription
+              ? _business!.description!
+              : 'No description yet. Tap Edit to add one.',
+          style: GoogleFonts.nunito(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: hasDescription
+                ? const Color(0xFF555555)
+                : const Color(0xFFAAAAAA),
+            height: 1.5,
           ),
+        ),
       ],
     );
   }

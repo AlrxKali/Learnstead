@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/auth_service.dart';
 import 'home_screen.dart';
-import 'create_business_screen.dart';
+import 'business_form_screen.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -69,7 +69,7 @@ class _SignupScreenState extends State<SignupScreen> {
       );
       if (!mounted) return;
       final destination = result.profile.role == 'provider'
-          ? const CreateBusinessScreen()
+          ? const BusinessFormScreen()
           : const HomeScreen();
       Navigator.pushReplacement(
         context,
