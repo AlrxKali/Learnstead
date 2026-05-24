@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'signup_screen.dart';
 import 'home_screen.dart';
+import 'provider_home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -23,10 +24,15 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _handleLogin() {
-    // TODO: Connect to API
+    // TODO: Connect to API — replace with real role check
+    final email = _emailController.text.trim().toLowerCase();
+    final destination = email.contains('provider')
+        ? const ProviderHomeScreen()
+        : const HomeScreen();
+
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(builder: (context) => const HomeScreen()),
+      MaterialPageRoute(builder: (context) => destination),
     );
   }
 
