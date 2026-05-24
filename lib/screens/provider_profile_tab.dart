@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_client.dart';
 import '../services/business_service.dart';
+import '../utils/age.dart';
+import '../utils/phone.dart';
 import 'create_business_screen.dart';
 
 class ProviderProfileTab extends StatefulWidget {
@@ -21,16 +23,6 @@ class _ProviderProfileTabState extends State<ProviderProfileTab> {
   bool _isEditing = false;
   bool _notFound = false;
   String? _loadError;
-
-  // Placeholder data — needs its own backend tables to wire up.
-  final _services = [
-    'Creative Arts',
-    'STEM',
-    'Nature-Based Learning',
-    'Small Group Sessions',
-    'After-School Programs',
-    'Weekend Workshops',
-  ];
 
   @override
   void initState() {
@@ -323,14 +315,20 @@ class _ProviderProfileTabState extends State<ProviderProfileTab> {
                   color: const Color(0xFF333333),
                 ),
               ),
-              const SizedBox(height: 2),
-              Text(
-                categoryName,
-                style: GoogleFonts.nunito(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: const Color(0xFF999999),
-                ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Text(
+                    categoryName,
+                    style: GoogleFonts.nunito(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF999999),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _buildDeliveryChip(business.deliveryMode),
+                ],
               ),
             ],
           ),
@@ -478,7 +476,26 @@ class _ProviderProfileTabState extends State<ProviderProfileTab> {
     );
   }
 
+  Widget _buildDeliveryChip(DeliveryMode mode) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: const Color(0xFF6F9A84).withAlpha(30),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        mode.label,
+        style: GoogleFonts.nunito(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: const Color(0xFF5D7048),
+        ),
+      ),
+    );
+  }
+
   Widget _buildServicesSection() {
+    final services = _business?.subcategories ?? const [];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -491,42 +508,57 @@ class _ProviderProfileTabState extends State<ProviderProfileTab> {
           ),
         ),
         const SizedBox(height: 10),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: _services.map((service) {
-            return Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: const Color(0xFF6F9A84).withAlpha(20),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                service,
-                style: GoogleFonts.nunito(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: const Color(0xFF5D7048),
+        if (services.isEmpty)
+          Text(
+            'No services selected yet.',
+            style: GoogleFonts.nunito(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFFAAAAAA),
+            ),
+          )
+        else
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: services.map((service) {
+              return Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6F9A84).withAlpha(20),
+                  borderRadius: BorderRadius.circular(20),
                 ),
-              ),
-            );
-          }).toList(),
-        ),
+                child: Text(
+                  service.name,
+                  style: GoogleFonts.nunito(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF5D7048),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
       ],
     );
   }
 
   Widget _buildDetailsSection(Business business) {
+    final ageRange = formatAgeRange(business.minAge, business.maxAge);
+    final showAddress = business.deliveryMode != DeliveryMode.online &&
+        business.formattedAddress != null;
     final details = <_DetailRow>[
-      if (business.formattedAddress != null)
+      if (ageRange != null)
+        _DetailRow(Icons.child_care_outlined, 'Ages', ageRange),
+      if (showAddress)
         _DetailRow(
           Icons.location_on_outlined,
           'Address',
           business.formattedAddress!,
         ),
       if (business.phone != null && business.phone!.isNotEmpty)
-        _DetailRow(Icons.phone_outlined, 'Phone', business.phone!),
+        _DetailRow(Icons.phone_outlined, 'Phone', formatPhone(business.phone)),
       if (business.email != null && business.email!.isNotEmpty)
         _DetailRow(Icons.email_outlined, 'Email', business.email!),
       if (business.website != null && business.website!.isNotEmpty)

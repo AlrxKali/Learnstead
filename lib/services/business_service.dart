@@ -1,6 +1,44 @@
 import 'api_client.dart';
 import 'auth_service.dart';
 
+enum DeliveryMode { online, inPerson, hybrid }
+
+extension DeliveryModeWire on DeliveryMode {
+  String get wire {
+    switch (this) {
+      case DeliveryMode.online:
+        return 'online';
+      case DeliveryMode.inPerson:
+        return 'in_person';
+      case DeliveryMode.hybrid:
+        return 'hybrid';
+    }
+  }
+
+  String get label {
+    switch (this) {
+      case DeliveryMode.online:
+        return 'Online';
+      case DeliveryMode.inPerson:
+        return 'In-Person';
+      case DeliveryMode.hybrid:
+        return 'Hybrid';
+    }
+  }
+
+  static DeliveryMode fromWire(String? value) {
+    switch (value) {
+      case 'online':
+        return DeliveryMode.online;
+      case 'hybrid':
+        return DeliveryMode.hybrid;
+      case 'in_person':
+      default:
+        return DeliveryMode.inPerson;
+    }
+  }
+}
+
 class BusinessCategory {
   final String id;
   final String name;
@@ -30,6 +68,10 @@ class Business {
   final String? zipCode;
   final String? categoryId;
   final BusinessCategory? category;
+  final DeliveryMode deliveryMode;
+  final int? minAge;
+  final int? maxAge;
+  final List<BusinessCategory> subcategories;
 
   Business({
     required this.id,
@@ -46,10 +88,15 @@ class Business {
     required this.zipCode,
     required this.categoryId,
     required this.category,
+    required this.deliveryMode,
+    required this.minAge,
+    required this.maxAge,
+    required this.subcategories,
   });
 
   factory Business.fromJson(Map<String, dynamic> json) {
     final cat = json['category'];
+    final subs = json['subcategories'] as List<dynamic>? ?? const [];
     return Business(
       id: json['id'] as String,
       ownerId: json['owner_id'] as String,
@@ -67,6 +114,12 @@ class Business {
       category: cat is Map<String, dynamic>
           ? BusinessCategory.fromJson(cat)
           : null,
+      deliveryMode: DeliveryModeWire.fromWire(json['delivery_mode'] as String?),
+      minAge: json['min_age'] as int?,
+      maxAge: json['max_age'] as int?,
+      subcategories: subs
+          .map((e) => BusinessCategory.fromJson(e as Map<String, dynamic>))
+          .toList(),
     );
   }
 
@@ -114,6 +167,19 @@ class BusinessService {
         .toList();
   }
 
+  /// Subcategories suggested under a given top-level category.
+  /// Returns all subcategories if [categoryId] is null.
+  Future<List<BusinessCategory>> listSubcategories({String? categoryId}) async {
+    final path = categoryId == null
+        ? '/businesses/subcategories'
+        : '/businesses/subcategories?category_id=$categoryId';
+    final response = await _client.getJson(path, token: _requireToken());
+    final list = response as List<dynamic>;
+    return list
+        .map((e) => BusinessCategory.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<Business> createBusiness({
     required String name,
     String? description,
@@ -126,8 +192,14 @@ class BusinessService {
     String? state,
     String? zipCode,
     String? categoryId,
+    DeliveryMode deliveryMode = DeliveryMode.inPerson,
+    int? minAge,
+    int? maxAge,
   }) async {
-    final body = <String, dynamic>{'name': name};
+    final body = <String, dynamic>{
+      'name': name,
+      'delivery_mode': deliveryMode.wire,
+    };
     void addIfPresent(String key, String? value) {
       if (value != null && value.trim().isNotEmpty) {
         body[key] = value.trim();
@@ -144,6 +216,8 @@ class BusinessService {
     addIfPresent('state', state);
     addIfPresent('zip_code', zipCode);
     if (categoryId != null) body['category_id'] = categoryId;
+    if (minAge != null) body['min_age'] = minAge;
+    if (maxAge != null) body['max_age'] = maxAge;
 
     final response = await _client.postJson(
       '/businesses',
@@ -180,6 +254,9 @@ class BusinessService {
     String? state,
     String? zipCode,
     String? categoryId,
+    DeliveryMode? deliveryMode,
+    int? minAge,
+    int? maxAge,
   }) async {
     final body = <String, dynamic>{};
     if (name != null) body['name'] = name;
@@ -193,10 +270,22 @@ class BusinessService {
     if (state != null) body['state'] = state;
     if (zipCode != null) body['zip_code'] = zipCode;
     if (categoryId != null) body['category_id'] = categoryId;
+    if (deliveryMode != null) body['delivery_mode'] = deliveryMode.wire;
+    if (minAge != null) body['min_age'] = minAge;
+    if (maxAge != null) body['max_age'] = maxAge;
 
     final response = await _client.putJson(
       '/businesses/me',
       body,
+      token: _requireToken(),
+    );
+    return Business.fromJson(response as Map<String, dynamic>);
+  }
+
+  Future<Business> setMySubcategories(List<String> subcategoryIds) async {
+    final response = await _client.putJson(
+      '/businesses/me/subcategories',
+      {'subcategory_ids': subcategoryIds},
       token: _requireToken(),
     );
     return Business.fromJson(response as Map<String, dynamic>);
