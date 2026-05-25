@@ -12,11 +12,19 @@ class ApiException implements Exception {
 }
 
 class ApiClient {
-  static const String _defaultBaseUrl = 'http://127.0.0.1:8000';
-  static const String baseUrl = String.fromEnvironment(
-    'API_BASE_URL',
-    defaultValue: _defaultBaseUrl,
-  );
+  // Compile-time config. Pass via --dart-define-from-file=config/dev.json
+  // (or config/prod.json). String.fromEnvironment returns '' when unset.
+  static const String _rawBaseUrl = String.fromEnvironment('API_BASE_URL');
+
+  static String get baseUrl {
+    if (_rawBaseUrl.isEmpty) {
+      throw StateError(
+        'API_BASE_URL is not configured. Pass it at build time, e.g. '
+        '`flutter run --dart-define-from-file=config/dev.json`.',
+      );
+    }
+    return _rawBaseUrl;
+  }
 
   static const Duration _timeout = Duration(seconds: 15);
 
