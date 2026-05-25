@@ -282,6 +282,25 @@ class BusinessService {
     return Business.fromJson(response as Map<String, dynamic>);
   }
 
+  /// Listing for parents: online + locality-matched businesses, with
+  /// optional text query and category filter.
+  Future<List<Business>> discover({String? q, String? categoryId}) async {
+    final params = <String, String>{};
+    if (q != null && q.trim().isNotEmpty) params['q'] = q.trim();
+    if (categoryId != null) params['category_id'] = categoryId;
+    final query = params.isEmpty
+        ? ''
+        : '?${params.entries.map((e) => '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}').join('&')}';
+    final response = await _client.getJson(
+      '/businesses/discover$query',
+      token: _requireToken(),
+    );
+    final list = response as List<dynamic>;
+    return list
+        .map((e) => Business.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<Business> setMySubcategories(List<String> subcategoryIds) async {
     final response = await _client.putJson(
       '/businesses/me/subcategories',

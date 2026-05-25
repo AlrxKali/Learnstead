@@ -48,6 +48,14 @@ class ApiClient {
     return _send('PUT', path, body: body, token: token);
   }
 
+  Future<dynamic> patchJson(
+    String path,
+    Map<String, dynamic> body, {
+    String? token,
+  }) {
+    return _send('PATCH', path, body: body, token: token);
+  }
+
   Future<dynamic> _send(
     String method,
     String path, {
@@ -74,6 +82,11 @@ class ApiClient {
         case 'PUT':
           response = await http
               .put(uri, headers: headers, body: jsonEncode(body ?? {}))
+              .timeout(_timeout);
+          break;
+        case 'PATCH':
+          response = await http
+              .patch(uri, headers: headers, body: jsonEncode(body ?? {}))
               .timeout(_timeout);
           break;
         default:

@@ -16,6 +16,7 @@ class _SignupScreenState extends State<SignupScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  final _zipController = TextEditingController();
   final _authService = AuthService();
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
@@ -29,6 +30,7 @@ class _SignupScreenState extends State<SignupScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
+    _zipController.dispose();
     super.dispose();
   }
 
@@ -59,6 +61,15 @@ class _SignupScreenState extends State<SignupScreen> {
       return;
     }
 
+    final zipRaw = _zipController.text.trim();
+    if (_selectedRole == 'parent') {
+      final digits = zipRaw.replaceAll(RegExp(r'\D'), '');
+      if (digits.length != 5 && digits.length != 9) {
+        _showError('Please enter a 5-digit US zip code.');
+        return;
+      }
+    }
+
     setState(() => _isSubmitting = true);
     try {
       final result = await _authService.signup(
@@ -66,6 +77,7 @@ class _SignupScreenState extends State<SignupScreen> {
         password: password,
         role: _selectedRole!,
         fullName: name.isEmpty ? null : name,
+        homeZipCode: _selectedRole == 'parent' ? zipRaw : null,
       );
       if (!mounted) return;
       final destination = result.profile.role == 'provider'
@@ -330,6 +342,39 @@ class _SignupScreenState extends State<SignupScreen> {
                 ],
               ),
               const SizedBox(height: 20),
+
+              // Zip code (parents only — used to surface nearby providers)
+              if (_selectedRole == 'parent') ...[
+                Text(
+                  'Home Zip Code',
+                  style: GoogleFonts.nunito(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF555555),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _zipController,
+                  keyboardType: TextInputType.number,
+                  style: GoogleFonts.nunito(
+                      fontSize: 15, color: const Color(0xFF333333)),
+                  decoration: _inputDecoration(
+                    hint: 'e.g. 97201',
+                    prefixIcon: Icons.home_outlined,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  "We use this to show you programs near you. Online programs are visible regardless.",
+                  style: GoogleFonts.nunito(
+                    fontSize: 12,
+                    color: const Color(0xFF999999),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
 
               // Terms checkbox
               Row(
