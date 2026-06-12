@@ -56,6 +56,10 @@ class ApiClient {
     return _send('PATCH', path, body: body, token: token);
   }
 
+  Future<dynamic> deleteJson(String path, {String? token}) {
+    return _send('DELETE', path, token: token);
+  }
+
   Future<dynamic> _send(
     String method,
     String path, {
@@ -88,6 +92,9 @@ class ApiClient {
           response = await http
               .patch(uri, headers: headers, body: jsonEncode(body ?? {}))
               .timeout(_timeout);
+          break;
+        case 'DELETE':
+          response = await http.delete(uri, headers: headers).timeout(_timeout);
           break;
         default:
           throw ApiException('Unsupported method $method');

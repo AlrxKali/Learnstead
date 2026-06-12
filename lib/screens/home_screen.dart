@@ -7,6 +7,7 @@ import '../services/auth_service.dart';
 import '../services/business_service.dart';
 import '../utils/age.dart';
 import '../utils/phone.dart';
+import 'planner_tab.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -124,7 +125,9 @@ class _HomeScreenState extends State<HomeScreen> {
       body: SafeArea(
         child: _selectedIndex == 0
             ? _buildDiscoverTab()
-            : _buildComingSoonTab(),
+            : _selectedIndex == 3
+                ? const PlannerTab()
+                : _buildComingSoonTab(),
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
