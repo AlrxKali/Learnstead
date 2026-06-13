@@ -282,6 +282,48 @@ class BusinessService {
     return Business.fromJson(response as Map<String, dynamic>);
   }
 
+  /// Open-ended search across all businesses. Locality is opt-in via
+  /// [zipPrefix] (when set, online + matching zip-prefix businesses).
+  Future<List<Business>> search({
+    String? q,
+    String? categoryId,
+    List<String>? subcategoryIds,
+    List<DeliveryMode>? deliveryModes,
+    int? age,
+    String? zipPrefix,
+  }) async {
+    final params = <MapEntry<String, String>>[];
+    void add(String key, String value) =>
+        params.add(MapEntry(key, value));
+
+    if (q != null && q.trim().isNotEmpty) add('q', q.trim());
+    if (categoryId != null) add('category_id', categoryId);
+    if (subcategoryIds != null) {
+      for (final id in subcategoryIds) {
+        add('subcategory_id', id);
+      }
+    }
+    if (deliveryModes != null) {
+      for (final m in deliveryModes) {
+        add('delivery_mode', m.wire);
+      }
+    }
+    if (age != null) add('age', age.toString());
+    if (zipPrefix != null && zipPrefix.isNotEmpty) {
+      add('zip_prefix', zipPrefix);
+    }
+
+    final qs = params.isEmpty
+        ? ''
+        : '?${params.map((e) => '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}').join('&')}';
+    final response =
+        await _client.getJson('/businesses/search$qs', token: _requireToken());
+    final list = response as List<dynamic>;
+    return list
+        .map((e) => Business.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   /// Listing for parents: online + locality-matched businesses, with
   /// optional text query and category filter.
   Future<List<Business>> discover({String? q, String? categoryId}) async {

@@ -6,8 +6,10 @@ import '../services/api_client.dart';
 import '../services/auth_service.dart';
 import '../services/business_service.dart';
 import '../utils/age.dart';
+import '../utils/category_image.dart';
 import '../utils/phone.dart';
 import 'planner_tab.dart';
+import 'search_tab.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -125,9 +127,11 @@ class _HomeScreenState extends State<HomeScreen> {
       body: SafeArea(
         child: _selectedIndex == 0
             ? _buildDiscoverTab()
-            : _selectedIndex == 3
-                ? const PlannerTab()
-                : _buildComingSoonTab(),
+            : _selectedIndex == 1
+                ? const SearchTab()
+                : _selectedIndex == 3
+                    ? const PlannerTab()
+                    : _buildComingSoonTab(),
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
@@ -351,28 +355,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Explicit category → image mappings. Anything not listed here gets a
-  // deterministic random image from _fallbackImages so the same category
-  // always shows the same picture across renders.
-  static const Map<String, String> _categoryImageMap = {
-    'Enrichment Program': 'static/activity cards/Art and Music.png',
-    'Co-op': 'static/activity cards/Co-ops.png',
-    'Tutoring': 'static/activity cards/Therapies.png',
-  };
-
-  static const List<String> _fallbackImages = [
-    'static/activity cards/Art and Music.png',
-    'static/activity cards/Co-ops.png',
-    'static/activity cards/Therapies.png',
-  ];
-
-  String _imageFor(BusinessCategory c) {
-    final explicit = _categoryImageMap[c.name];
-    if (explicit != null) return explicit;
-    final idx = c.name.hashCode.abs() % _fallbackImages.length;
-    return _fallbackImages[idx];
-  }
-
   Widget _buildCategoryChips() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -427,7 +409,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _categoryCard(BusinessCategory c) {
     final selected = _selectedCategoryId == c.id;
-    final image = _imageFor(c);
+    final image = imageForCategory(c);
     return GestureDetector(
       onTap: () {
         setState(() {
