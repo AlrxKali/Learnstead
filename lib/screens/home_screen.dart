@@ -166,90 +166,91 @@ class _HomeScreenState extends State<HomeScreen> {
     return RefreshIndicator(
       onRefresh: _refresh,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+        padding: const EdgeInsets.only(bottom: 24),
         children: [
-          _buildHeader(),
-          const SizedBox(height: 16),
-          _buildSearchBar(),
-          const SizedBox(height: 16),
-          if (!hasZip) ...[
-            _buildZipPrompt(),
-            const SizedBox(height: 16),
-          ],
-          if (_categories.isNotEmpty) ...[
-            _buildCategoryChips(),
-            const SizedBox(height: 16),
-          ],
-          _buildResults(),
+          _buildHero(),
+          const SizedBox(height: 20),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (!hasZip) ...[
+                  _buildZipPrompt(),
+                  const SizedBox(height: 16),
+                ],
+                if (_categories.isNotEmpty) ...[
+                  _buildCategoryChips(),
+                  const SizedBox(height: 16),
+                ],
+                _buildResults(),
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildHeader() {
-    final name = Session.current?.profile.fullName?.split(' ').first;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildHero() {
+    return Stack(
+      alignment: Alignment.bottomCenter,
       children: [
-        Text(
-          name == null || name.isEmpty ? 'Discover' : 'Hi, $name',
-          style: GoogleFonts.nunito(
-            fontSize: 22,
-            fontWeight: FontWeight.w800,
-            color: const Color(0xFF333333),
-          ),
+        Image.asset(
+          'static/home.png',
+          width: double.infinity,
+          fit: BoxFit.contain,
         ),
-        const SizedBox(height: 2),
-        Text(
-          'Find programs and providers your family will love.',
-          style: GoogleFonts.nunito(
-            fontSize: 13,
-            color: const Color(0xFF999999),
-            fontWeight: FontWeight.w600,
+        Positioned(
+          bottom: 16,
+          left: 30,
+          right: 30,
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withAlpha(40),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: TextField(
+              controller: _searchController,
+              onChanged: _onSearchChanged,
+              style: GoogleFonts.nunito(
+                fontSize: 14,
+                color: const Color(0xFF333333),
+              ),
+              decoration: InputDecoration(
+                hintText: 'Search by name or keyword…',
+                hintStyle: GoogleFonts.nunito(
+                  fontSize: 14,
+                  color: const Color(0xFFAAAAAA),
+                ),
+                prefixIcon:
+                    const Icon(Icons.search, color: Color(0xFFC5D1C9), size: 20),
+                suffixIcon: _searchController.text.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.close, size: 18),
+                        onPressed: () {
+                          _searchController.clear();
+                          _refresh();
+                        },
+                      ),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+              ),
+            ),
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildSearchBar() {
-    return TextField(
-      controller: _searchController,
-      onChanged: _onSearchChanged,
-      style: GoogleFonts.nunito(fontSize: 14, color: const Color(0xFF333333)),
-      decoration: InputDecoration(
-        hintText: 'Search by name or keyword…',
-        hintStyle: GoogleFonts.nunito(
-          fontSize: 14,
-          color: const Color(0xFFAAAAAA),
-        ),
-        prefixIcon: const Icon(Icons.search, color: Color(0xFFC5D1C9)),
-        suffixIcon: _searchController.text.isEmpty
-            ? null
-            : IconButton(
-                icon: const Icon(Icons.close, size: 18),
-                onPressed: () {
-                  _searchController.clear();
-                  _refresh();
-                },
-              ),
-        filled: true,
-        fillColor: const Color(0xFFF7F9F8),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: Color(0xFFE0E7E3)),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: Color(0xFFE0E7E3)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: Color(0xFF6F9A84), width: 1.5),
-        ),
-      ),
     );
   }
 
@@ -350,45 +351,137 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // Explicit category → image mappings. Anything not listed here gets a
+  // deterministic random image from _fallbackImages so the same category
+  // always shows the same picture across renders.
+  static const Map<String, String> _categoryImageMap = {
+    'Enrichment Program': 'static/activity cards/Art and Music.png',
+    'Co-op': 'static/activity cards/Co-ops.png',
+    'Tutoring': 'static/activity cards/Therapies.png',
+  };
+
+  static const List<String> _fallbackImages = [
+    'static/activity cards/Art and Music.png',
+    'static/activity cards/Co-ops.png',
+    'static/activity cards/Therapies.png',
+  ];
+
+  String _imageFor(BusinessCategory c) {
+    final explicit = _categoryImageMap[c.name];
+    if (explicit != null) return explicit;
+    final idx = c.name.hashCode.abs() % _fallbackImages.length;
+    return _fallbackImages[idx];
+  }
+
   Widget _buildCategoryChips() {
-    return SizedBox(
-      height: 36,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        children: [
-          _categoryChip(null, 'All'),
-          ..._categories.map((c) => _categoryChip(c.id, c.name)),
-        ],
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Browse by activity',
+              style: GoogleFonts.nunito(
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                color: const Color(0xFF333333),
+              ),
+            ),
+            if (_selectedCategoryId != null)
+              GestureDetector(
+                onTap: () {
+                  setState(() => _selectedCategoryId = null);
+                  _refresh();
+                },
+                child: Row(
+                  children: [
+                    const Icon(Icons.close, size: 14, color: activeColor),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Clear',
+                      style: GoogleFonts.nunito(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: activeColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 130,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: _categories.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 12),
+            itemBuilder: (context, i) => _categoryCard(_categories[i]),
+          ),
+        ),
+      ],
     );
   }
 
-  Widget _categoryChip(String? id, String label) {
-    final selected = _selectedCategoryId == id;
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: GestureDetector(
-        onTap: () {
-          setState(() => _selectedCategoryId = id);
-          _refresh();
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          decoration: BoxDecoration(
-            color: selected ? activeColor : const Color(0xFFF7F9F8),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: selected ? activeColor : const Color(0xFFE0E7E3),
+  Widget _categoryCard(BusinessCategory c) {
+    final selected = _selectedCategoryId == c.id;
+    final image = _imageFor(c);
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _selectedCategoryId = selected ? null : c.id;
+        });
+        _refresh();
+      },
+      child: SizedBox(
+        width: 110,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.asset(
+                    image,
+                    width: 110,
+                    height: 90,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                if (selected)
+                  Positioned.fill(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        color: activeColor.withAlpha(80),
+                        border: Border.all(color: activeColor, width: 2),
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.check_circle,
+                          color: Colors.white,
+                          size: 26,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
-          ),
-          child: Text(
-            label,
-            style: GoogleFonts.nunito(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: selected ? Colors.white : const Color(0xFF555555),
+            const SizedBox(height: 6),
+            Text(
+              c.name,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.nunito(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: selected ? activeColor : const Color(0xFF333333),
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
