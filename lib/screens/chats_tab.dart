@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/chat_service.dart';
+import '../widgets/chats_badged_icon.dart';
 import 'conversation_screen.dart';
 
 class ChatsTab extends StatefulWidget {
@@ -117,15 +118,25 @@ class _ChatsTabState extends State<ChatsTab> {
     }
     return RefreshIndicator(
       onRefresh: _load,
-      child: ListView.separated(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 80),
-        itemCount: _conversations.length,
-        separatorBuilder: (_, _) => const SizedBox(height: 10),
-        itemBuilder: (context, i) => _ConversationTile(
-          conversation: _conversations[i],
-          currentUserId: _chat.currentUserId,
-          onTap: () => _open(_conversations[i]),
-        ),
+      child: StreamBuilder<Map<String, int>>(
+        stream: _chat.unreadCountsStream(),
+        builder: (context, snap) {
+          final unread = snap.data ?? const <String, int>{};
+          return ListView.separated(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 80),
+            itemCount: _conversations.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 10),
+            itemBuilder: (context, i) {
+              final c = _conversations[i];
+              return _ConversationTile(
+                conversation: c,
+                currentUserId: _chat.currentUserId,
+                unreadCount: unread[c.id] ?? 0,
+                onTap: () => _open(c),
+              );
+            },
+          );
+        },
       ),
     );
   }
@@ -202,11 +213,13 @@ class _ConversationTile extends StatelessWidget {
 
   final Conversation conversation;
   final String? currentUserId;
+  final int unreadCount;
   final VoidCallback onTap;
 
   const _ConversationTile({
     required this.conversation,
     required this.currentUserId,
+    required this.unreadCount,
     required this.onTap,
   });
 
@@ -220,6 +233,7 @@ class _ConversationTile extends StatelessWidget {
         peerName.isNotEmpty ? peerName[0].toUpperCase() : '?';
     final preview = conversation.lastMessageBody ?? 'No messages yet.';
     final time = conversation.lastMessageAt ?? conversation.createdAt;
+    final hasUnread = unreadCount > 0;
 
     return GestureDetector(
       onTap: onTap,
@@ -279,22 +293,40 @@ class _ConversationTile extends StatelessWidget {
                         _relativeTime(time),
                         style: GoogleFonts.nunito(
                           fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: const Color(0xFF999999),
+                          fontWeight: hasUnread
+                              ? FontWeight.w800
+                              : FontWeight.w600,
+                          color: hasUnread
+                              ? brand
+                              : const Color(0xFF999999),
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 3),
-                  Text(
-                    preview,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.nunito(
-                      fontSize: 13,
-                      color: const Color(0xFF777777),
-                      fontWeight: FontWeight.w600,
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          preview,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.nunito(
+                            fontSize: 13,
+                            color: hasUnread
+                                ? const Color(0xFF333333)
+                                : const Color(0xFF777777),
+                            fontWeight: hasUnread
+                                ? FontWeight.w800
+                                : FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      if (hasUnread) ...[
+                        const SizedBox(width: 8),
+                        UnreadBadge(count: unreadCount),
+                      ],
+                    ],
                   ),
                 ],
               ),

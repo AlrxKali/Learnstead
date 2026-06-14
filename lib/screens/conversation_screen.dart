@@ -26,21 +26,42 @@ class _ConversationScreenState extends State<ConversationScreen> {
   String? _error;
 
   String get _me => _chat.currentUserId ?? '';
+  bool get _iAmParent => _me == widget.conversation.parentId;
 
   @override
   void initState() {
     super.initState();
+    // Reset unread for this conversation as soon as we open it.
+    _markRead();
     _sub = _chat.messageStream(widget.conversation.id).listen(
       (rows) {
         if (!mounted) return;
+        final hadIncoming = rows.any((m) =>
+            m.senderId != _me &&
+            !_messages.any((existing) => existing.id == m.id));
         setState(() => _messages = rows);
         WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+        // If a new message from the other party just arrived while we're
+        // still in the screen, mark it read immediately so the badge stays
+        // at zero for this conversation.
+        if (hadIncoming) _markRead();
       },
       onError: (e) {
         if (!mounted) return;
         setState(() => _error = e.toString());
       },
     );
+  }
+
+  Future<void> _markRead() async {
+    try {
+      await _chat.markConversationRead(
+        widget.conversation.id,
+        isParent: _iAmParent,
+      );
+    } catch (_) {
+      // Non-fatal — badge will catch up on the next refresh.
+    }
   }
 
   @override

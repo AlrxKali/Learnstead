@@ -8,6 +8,7 @@ import '../services/business_service.dart';
 import '../utils/category_image.dart';
 import '../widgets/business_card.dart';
 import '../widgets/business_detail_sheet.dart';
+import '../widgets/chats_badged_icon.dart';
 import 'chats_tab.dart';
 import 'planner_tab.dart';
 import 'saved_tab.dart';
@@ -190,12 +191,16 @@ class _HomeScreenState extends State<HomeScreen> {
         unselectedItemColor: inactiveColor,
         selectedLabelStyle: const TextStyle(fontSize: 12),
         unselectedLabelStyle: const TextStyle(fontSize: 12),
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-          BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Search'),
-          BottomNavigationBarItem(icon: Icon(Icons.favorite), label: 'Saved'),
-          BottomNavigationBarItem(icon: Icon(Icons.chat_bubble), label: 'Chats'),
-          BottomNavigationBarItem(icon: Icon(Icons.menu), label: 'Planner'),
+        items: [
+          const BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+          const BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Search'),
+          const BottomNavigationBarItem(icon: Icon(Icons.favorite), label: 'Saved'),
+          BottomNavigationBarItem(
+            icon: const ChatsBadgedIcon(),
+            activeIcon: const ChatsBadgedIcon(selected: true),
+            label: 'Chats',
+          ),
+          const BottomNavigationBarItem(icon: Icon(Icons.menu), label: 'Planner'),
         ],
       ),
     );

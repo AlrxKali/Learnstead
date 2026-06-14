@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Lightweight reference to a business inside a conversation row.
@@ -221,5 +223,72 @@ class ChatService {
     });
   }
 
+  /// Set the appropriate last_read_at on a conversation to now(). Picks
+  /// the parent column if [isParent] is true, otherwise the provider one.
+  Future<void> markConversationRead(
+    String conversationId, {
+    required bool isParent,
+  }) async {
+    final col = isParent ? 'parent_last_read_at' : 'provider_last_read_at';
+    await _sb
+        .from('conversations')
+        .update({col: DateTime.now().toUtc().toIso8601String()})
+        .eq('id', conversationId);
+  }
+
+  /// Stream of per-conversation unread counts for the current user.
+  ///
+  /// Emits an initial map immediately, then re-emits whenever a new
+  /// message is inserted into any of your conversations OR any of your
+  /// conversation rows change (e.g. last_read_at update). The map keys
+  /// are conversation IDs; only conversations with > 0 unread are
+  /// present, so the sum of values is the total badge number.
+  Stream<Map<String, int>> unreadCountsStream() async* {
+    final controller = StreamController<Map<String, int>>();
+    Map<String, int> last = const {};
+
+    Future<void> push() async {
+      try {
+        final rows = await _sb.rpc('get_unread_counts');
+        final next = <String, int>{};
+        for (final row in rows as List) {
+          final r = row as Map<String, dynamic>;
+          next[r['conversation_id'] as String] = (r['unread_count'] as num).toInt();
+        }
+        if (!_mapEquals(next, last)) {
+          last = next;
+          if (!controller.isClosed) controller.add(next);
+        }
+      } catch (_) {
+        // Ignore intermittent errors — UI will catch up on next event.
+      }
+    }
+
+    await push(); // initial value
+
+    final msgSub = _sb.from('messages').stream(primaryKey: ['id']).listen((_) {
+      push();
+    });
+    final convSub =
+        _sb.from('conversations').stream(primaryKey: ['id']).listen((_) {
+      push();
+    });
+
+    controller.onCancel = () async {
+      await msgSub.cancel();
+      await convSub.cancel();
+    };
+
+    yield* controller.stream;
+  }
+
   String? get currentUserId => _sb.auth.currentUser?.id;
+}
+
+bool _mapEquals(Map<String, int> a, Map<String, int> b) {
+  if (a.length != b.length) return false;
+  for (final entry in a.entries) {
+    if (b[entry.key] != entry.value) return false;
+  }
+  return true;
 }

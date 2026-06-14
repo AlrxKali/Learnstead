@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../widgets/chats_badged_icon.dart';
 import 'provider_dashboard_tab.dart';
 import 'provider_profile_tab.dart';
 import 'provider_messages_tab.dart';
@@ -49,23 +50,23 @@ class _ProviderHomeScreenState extends State<ProviderHomeScreen> {
           fontSize: 11,
           fontWeight: FontWeight.w600,
         ),
-        items: const [
-          BottomNavigationBarItem(
+        items: [
+          const BottomNavigationBarItem(
             icon: Icon(Icons.dashboard_outlined),
             activeIcon: Icon(Icons.dashboard),
             label: 'Dashboard',
           ),
-          BottomNavigationBarItem(
+          const BottomNavigationBarItem(
             icon: Icon(Icons.storefront_outlined),
             activeIcon: Icon(Icons.storefront),
             label: 'My Business',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.chat_bubble_outline),
-            activeIcon: Icon(Icons.chat_bubble),
+            icon: const ChatsBadgedIcon(),
+            activeIcon: const ChatsBadgedIcon(selected: true),
             label: 'Messages',
           ),
-          BottomNavigationBarItem(
+          const BottomNavigationBarItem(
             icon: Icon(Icons.calendar_today_outlined),
             activeIcon: Icon(Icons.calendar_today),
             label: 'Schedule',
