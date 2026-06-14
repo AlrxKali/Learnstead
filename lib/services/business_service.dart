@@ -343,6 +343,40 @@ class BusinessService {
         .toList();
   }
 
+  // ---- saved ----
+
+  Future<List<Business>> listSaved() async {
+    final r = await _client.getJson('/businesses/saved', token: _requireToken());
+    return (r as List<dynamic>)
+        .map((e) => Business.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<Set<String>> listSavedIds() async {
+    final r = await _client.getJson(
+      '/businesses/saved/ids',
+      token: _requireToken(),
+    );
+    return (r as List<dynamic>).map((e) => e as String).toSet();
+  }
+
+  Future<void> saveBusiness(String businessId) async {
+    await _client.putJson(
+      '/businesses/saved/$businessId',
+      const {},
+      token: _requireToken(),
+    );
+  }
+
+  Future<void> unsaveBusiness(String businessId) async {
+    await _client.deleteJson(
+      '/businesses/saved/$businessId',
+      token: _requireToken(),
+    );
+  }
+
+  // ---- subcategories ----
+
   Future<Business> setMySubcategories(List<String> subcategoryIds) async {
     final response = await _client.putJson(
       '/businesses/me/subcategories',

@@ -15,11 +15,18 @@ class BusinessCard extends StatelessWidget {
   final String? imageAsset;
   final VoidCallback onTap;
 
+  /// If non-null, a heart icon is shown in the top-right and tapping it
+  /// invokes [onToggleSave]. [isSaved] controls the fill.
+  final bool? isSaved;
+  final VoidCallback? onToggleSave;
+
   const BusinessCard({
     super.key,
     required this.business,
     required this.onTap,
     this.imageAsset,
+    this.isSaved,
+    this.onToggleSave,
   });
 
   @override
@@ -120,7 +127,27 @@ class BusinessCard extends StatelessWidget {
                 ],
               ),
             ),
+            if (onToggleSave != null) _heartButton(),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _heartButton() {
+    final filled = isSaved ?? false;
+    return Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: InkResponse(
+        onTap: onToggleSave,
+        radius: 22,
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Icon(
+            filled ? Icons.favorite : Icons.favorite_border,
+            color: filled ? const Color(0xFFCC6B2E) : const Color(0xFFC5D1C9),
+            size: 22,
+          ),
         ),
       ),
     );

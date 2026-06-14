@@ -1,3 +1,4 @@
+import 'package:supabase_flutter/supabase_flutter.dart' as sb;
 import 'api_client.dart';
 
 typedef AuthException = ApiException;
@@ -86,6 +87,7 @@ class AuthService {
     });
     final result = AuthResult.fromJson(response as Map<String, dynamic>);
     Session.current = result;
+    await _syncSupabaseSession(email: email, password: password);
     return result;
   }
 
@@ -107,7 +109,24 @@ class AuthService {
     final response = await _client.postJson('/auth/signup', body);
     final result = AuthResult.fromJson(response as Map<String, dynamic>);
     Session.current = result;
+    await _syncSupabaseSession(email: email, password: password);
     return result;
+  }
+
+  /// Sign into supabase_flutter with the same credentials so its client has
+  /// a session for Realtime + chat queries. Same credentials FastAPI just
+  /// validated; this is safe and idempotent.
+  Future<void> _syncSupabaseSession({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      await sb.Supabase.instance.client.auth
+          .signInWithPassword(email: email, password: password);
+    } catch (_) {
+      // Non-fatal: chat features will fail loud later, but the rest of
+      // the app keeps working.
+    }
   }
 
   Future<Profile> updateMyProfile({String? homeZipCode}) async {

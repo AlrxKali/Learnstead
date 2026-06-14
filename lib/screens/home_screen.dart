@@ -5,10 +5,12 @@ import 'package:google_fonts/google_fonts.dart';
 import '../services/api_client.dart';
 import '../services/auth_service.dart';
 import '../services/business_service.dart';
-import '../utils/age.dart';
 import '../utils/category_image.dart';
-import '../utils/phone.dart';
+import '../widgets/business_card.dart';
+import '../widgets/business_detail_sheet.dart';
+import 'chats_tab.dart';
 import 'planner_tab.dart';
+import 'saved_tab.dart';
 import 'search_tab.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -31,6 +33,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   List<BusinessCategory> _categories = [];
   List<Business> _results = [];
+  Set<String> _savedIds = {};
   String? _selectedCategoryId;
   bool _isLoading = true;
   bool _isSavingZip = false;
@@ -41,7 +44,48 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _loadCategories();
+    _loadSavedIds();
     _refresh();
+  }
+
+  Future<void> _loadSavedIds() async {
+    try {
+      final ids = await _businessService.listSavedIds();
+      if (!mounted) return;
+      setState(() => _savedIds = ids);
+    } on ApiException {
+      // Non-fatal; hearts just show as unfilled.
+    }
+  }
+
+  Future<void> _toggleSave(Business b) async {
+    final wasSaved = _savedIds.contains(b.id);
+    setState(() {
+      if (wasSaved) {
+        _savedIds.remove(b.id);
+      } else {
+        _savedIds.add(b.id);
+      }
+    });
+    try {
+      if (wasSaved) {
+        await _businessService.unsaveBusiness(b.id);
+      } else {
+        await _businessService.saveBusiness(b.id);
+      }
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        if (wasSaved) {
+          _savedIds.add(b.id);
+        } else {
+          _savedIds.remove(b.id);
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message), backgroundColor: const Color(0xFFB23A48)),
+      );
+    }
   }
 
   @override
@@ -129,9 +173,13 @@ class _HomeScreenState extends State<HomeScreen> {
             ? _buildDiscoverTab()
             : _selectedIndex == 1
                 ? const SearchTab()
-                : _selectedIndex == 3
-                    ? const PlannerTab()
-                    : _buildComingSoonTab(),
+                : _selectedIndex == 2
+                    ? const SavedTab()
+                    : _selectedIndex == 3
+                        ? const ChatsTab()
+                        : _selectedIndex == 4
+                            ? const PlannerTab()
+                            : _buildComingSoonTab(),
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
@@ -146,6 +194,7 @@ class _HomeScreenState extends State<HomeScreen> {
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
           BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Search'),
           BottomNavigationBarItem(icon: Icon(Icons.favorite), label: 'Saved'),
+          BottomNavigationBarItem(icon: Icon(Icons.chat_bubble), label: 'Chats'),
           BottomNavigationBarItem(icon: Icon(Icons.menu), label: 'Planner'),
         ],
       ),
@@ -544,145 +593,16 @@ class _HomeScreenState extends State<HomeScreen> {
       children: _results
           .map((b) => Padding(
                 padding: const EdgeInsets.only(bottom: 12),
-                child: _buildBusinessCard(b),
+                child: BusinessCard(
+                  business: b,
+                  imageAsset:
+                      b.category != null ? imageForCategory(b.category!) : null,
+                  isSaved: _savedIds.contains(b.id),
+                  onToggleSave: () => _toggleSave(b),
+                  onTap: () => _showBusinessDetail(b),
+                ),
               ))
           .toList(),
-    );
-  }
-
-  Widget _buildBusinessCard(Business business) {
-    final initial =
-        business.name.isNotEmpty ? business.name[0].toUpperCase() : '?';
-    final category = business.category?.name;
-    final ages = formatAgeRange(business.minAge, business.maxAge);
-    final location = business.deliveryMode == DeliveryMode.online
-        ? null
-        : [
-            if (business.city != null && business.city!.isNotEmpty)
-              business.city!,
-            if (business.state != null && business.state!.isNotEmpty)
-              business.state!,
-          ].join(', ');
-
-    return GestureDetector(
-      onTap: () => _showBusinessDetail(business),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withAlpha(20),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: const Color(0xFF6F9A84).withAlpha(30),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Center(
-                child: Text(
-                  initial,
-                  style: GoogleFonts.nunito(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: activeColor,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    business.name,
-                    style: GoogleFonts.nunito(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                      color: const Color(0xFF333333),
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 4,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      if (category != null) _metaPill(category, true),
-                      _metaPill(business.deliveryMode.label, false),
-                      if (ages != null) _metaPill(ages, false),
-                    ],
-                  ),
-                  if (location != null && location.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        const Icon(Icons.place_outlined,
-                            size: 13, color: Color(0xFF999999)),
-                        const SizedBox(width: 4),
-                        Text(
-                          location,
-                          style: GoogleFonts.nunito(
-                            fontSize: 12,
-                            color: const Color(0xFF999999),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                  if (business.description != null &&
-                      business.description!.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      business.description!,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.nunito(
-                        fontSize: 12,
-                        color: const Color(0xFF555555),
-                        fontWeight: FontWeight.w600,
-                        height: 1.4,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _metaPill(String text, bool primary) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: primary
-            ? const Color(0xFF6F9A84).withAlpha(30)
-            : const Color(0xFFF0F2F0),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        text,
-        style: GoogleFonts.nunito(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          color: primary ? activeColor : const Color(0xFF777777),
-        ),
-      ),
     );
   }
 
@@ -691,128 +611,21 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => DraggableScrollableSheet(
+      builder: (_) => DraggableScrollableSheet(
         initialChildSize: 0.7,
         minChildSize: 0.4,
         maxChildSize: 0.92,
-        builder: (ctx, controller) => Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: ListView(
-            controller: controller,
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
-            children: [
-              Center(
-                child: Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE0E7E3),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 18),
-              Text(
-                b.name,
-                style: GoogleFonts.nunito(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  color: const Color(0xFF333333),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  if (b.category != null) _metaPill(b.category!.name, true),
-                  _metaPill(b.deliveryMode.label, false),
-                  if (formatAgeRange(b.minAge, b.maxAge) != null)
-                    _metaPill(formatAgeRange(b.minAge, b.maxAge)!, false),
-                ],
-              ),
-              if (b.description != null && b.description!.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                Text(
-                  b.description!,
-                  style: GoogleFonts.nunito(
-                    fontSize: 14,
-                    color: const Color(0xFF555555),
-                    height: 1.5,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-              if (b.subcategories.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                Text(
-                  'Services',
-                  style: GoogleFonts.nunito(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    color: const Color(0xFF333333),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: b.subcategories
-                      .map((s) => Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF6F9A84).withAlpha(20),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              s.name,
-                              style: GoogleFonts.nunito(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: activeColor,
-                              ),
-                            ),
-                          ))
-                      .toList(),
-                ),
-              ],
-              const SizedBox(height: 16),
-              _detailRow(Icons.phone_outlined, formatPhone(b.phone)),
-              _detailRow(Icons.email_outlined, b.email),
-              _detailRow(Icons.language_outlined, b.website),
-              if (b.deliveryMode != DeliveryMode.online)
-                _detailRow(Icons.place_outlined, b.formattedAddress),
-            ],
+        builder: (_, controller) => StatefulBuilder(
+          builder: (_, setSheetState) => BusinessDetailSheet(
+            business: b,
+            scrollController: controller,
+            isSaved: _savedIds.contains(b.id),
+            onToggleSave: () async {
+              await _toggleSave(b);
+              setSheetState(() {});
+            },
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _detailRow(IconData icon, String? value) {
-    if (value == null || value.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 16, color: const Color(0xFF6F9A84)),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              value,
-              style: GoogleFonts.nunito(
-                fontSize: 13,
-                color: const Color(0xFF333333),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }

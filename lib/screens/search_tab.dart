@@ -5,10 +5,9 @@ import 'package:google_fonts/google_fonts.dart';
 import '../services/api_client.dart';
 import '../services/auth_service.dart';
 import '../services/business_service.dart';
-import '../utils/age.dart';
 import '../utils/category_image.dart';
-import '../utils/phone.dart';
 import '../widgets/business_card.dart';
+import '../widgets/business_detail_sheet.dart';
 
 enum LocationScope { nearMe, anywhere }
 
@@ -72,6 +71,7 @@ class _SearchTabState extends State<SearchTab> {
   List<BusinessCategory> _subcategories = [];
 
   List<Business> _results = [];
+  Set<String> _savedIds = {};
   bool _isLoading = true;
   String? _error;
 
@@ -79,7 +79,50 @@ class _SearchTabState extends State<SearchTab> {
   void initState() {
     super.initState();
     _loadCategories();
+    _loadSavedIds();
     _refresh();
+  }
+
+  Future<void> _loadSavedIds() async {
+    try {
+      final ids = await _service.listSavedIds();
+      if (!mounted) return;
+      setState(() => _savedIds = ids);
+    } on ApiException {
+      // Non-fatal; hearts just show as unfilled.
+    }
+  }
+
+  Future<void> _toggleSave(Business b) async {
+    final wasSaved = _savedIds.contains(b.id);
+    // Optimistic toggle.
+    setState(() {
+      if (wasSaved) {
+        _savedIds.remove(b.id);
+      } else {
+        _savedIds.add(b.id);
+      }
+    });
+    try {
+      if (wasSaved) {
+        await _service.unsaveBusiness(b.id);
+      } else {
+        await _service.saveBusiness(b.id);
+      }
+    } on ApiException catch (e) {
+      // Revert.
+      if (!mounted) return;
+      setState(() {
+        if (wasSaved) {
+          _savedIds.add(b.id);
+        } else {
+          _savedIds.remove(b.id);
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message), backgroundColor: const Color(0xFFB23A48)),
+      );
+    }
   }
 
   @override
@@ -434,6 +477,8 @@ class _SearchTabState extends State<SearchTab> {
           return BusinessCard(
             business: b,
             imageAsset: image,
+            isSaved: _savedIds.contains(b.id),
+            onToggleSave: () => _toggleSave(b),
             onTap: () => _showBusinessDetail(b),
           );
         },
@@ -522,13 +567,22 @@ class _SearchTabState extends State<SearchTab> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => DraggableScrollableSheet(
+      builder: (sheetCtx) => DraggableScrollableSheet(
         initialChildSize: 0.7,
         minChildSize: 0.4,
         maxChildSize: 0.92,
-        builder: (_, controller) => _BusinessDetailSheet(
-          business: b,
-          scrollController: controller,
+        builder: (_, controller) => StatefulBuilder(
+          // Lets the heart inside the sheet reflect toggle state without
+          // closing/reopening it.
+          builder: (_, setSheetState) => BusinessDetailSheet(
+            business: b,
+            scrollController: controller,
+            isSaved: _savedIds.contains(b.id),
+            onToggleSave: () async {
+              await _toggleSave(b);
+              setSheetState(() {});
+            },
+          ),
         ),
       ),
     );
@@ -1021,176 +1075,6 @@ class _FilterSheetState extends State<_FilterSheet> {
           }).toList(),
         ),
       ],
-    );
-  }
-}
-
-// ============================================================
-//  Business detail sheet (shared with Discover styling)
-// ============================================================
-
-class _BusinessDetailSheet extends StatelessWidget {
-  final Business business;
-  final ScrollController scrollController;
-
-  const _BusinessDetailSheet({
-    required this.business,
-    required this.scrollController,
-  });
-
-  static const Color _brand = Color(0xFF5D7048);
-
-  @override
-  Widget build(BuildContext context) {
-    final b = business;
-    return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: ListView(
-        controller: scrollController,
-        padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
-        children: [
-          Center(
-            child: Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: const Color(0xFFE0E7E3),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          const SizedBox(height: 18),
-          if (b.category != null)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Image.asset(
-                imageForCategory(b.category!),
-                width: double.infinity,
-                height: 140,
-                fit: BoxFit.cover,
-              ),
-            ),
-          const SizedBox(height: 14),
-          Text(
-            b.name,
-            style: GoogleFonts.nunito(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              color: const Color(0xFF333333),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              if (b.category != null) _pill(b.category!.name, primary: true),
-              _pill(b.deliveryMode.label),
-              if (formatAgeRange(b.minAge, b.maxAge) != null)
-                _pill(formatAgeRange(b.minAge, b.maxAge)!),
-            ],
-          ),
-          if (b.description != null && b.description!.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            Text(
-              b.description!,
-              style: GoogleFonts.nunito(
-                fontSize: 14,
-                color: const Color(0xFF555555),
-                height: 1.5,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-          if (b.subcategories.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            Text(
-              'Services',
-              style: GoogleFonts.nunito(
-                fontSize: 15,
-                fontWeight: FontWeight.w800,
-                color: const Color(0xFF333333),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: b.subcategories
-                  .map((s) => Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF6F9A84).withAlpha(20),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          s.name,
-                          style: GoogleFonts.nunito(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: _brand,
-                          ),
-                        ),
-                      ))
-                  .toList(),
-            ),
-          ],
-          const SizedBox(height: 16),
-          _detailRow(Icons.phone_outlined, formatPhone(b.phone)),
-          _detailRow(Icons.email_outlined, b.email),
-          _detailRow(Icons.language_outlined, b.website),
-          if (b.deliveryMode != DeliveryMode.online)
-            _detailRow(Icons.place_outlined, b.formattedAddress),
-        ],
-      ),
-    );
-  }
-
-  Widget _pill(String text, {bool primary = false}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: primary
-            ? const Color(0xFF6F9A84).withAlpha(30)
-            : const Color(0xFFF0F2F0),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        text,
-        style: GoogleFonts.nunito(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          color: primary ? _brand : const Color(0xFF777777),
-        ),
-      ),
-    );
-  }
-
-  Widget _detailRow(IconData icon, String? value) {
-    if (value == null || value.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 16, color: const Color(0xFF6F9A84)),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              value,
-              style: GoogleFonts.nunito(
-                fontSize: 13,
-                color: const Color(0xFF333333),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
