@@ -16,8 +16,19 @@ class ProviderHomeScreen extends StatefulWidget {
 class _ProviderHomeScreenState extends State<ProviderHomeScreen> {
   int _currentIndex = 0;
 
+  /// Bumped whenever the dashboard tab is (re)selected so its numbers
+  /// reflect edits made in the other tabs.
+  final _dashboardRefresh = ValueNotifier<int>(0);
+
   void _switchTab(int index) {
+    if (index == 0 && _currentIndex != 0) _dashboardRefresh.value++;
     setState(() => _currentIndex = index);
+  }
+
+  @override
+  void dispose() {
+    _dashboardRefresh.dispose();
+    super.dispose();
   }
 
   @override
@@ -28,7 +39,10 @@ class _ProviderHomeScreenState extends State<ProviderHomeScreen> {
         child: IndexedStack(
           index: _currentIndex,
           children: [
-            ProviderDashboardTab(onTabSwitch: _switchTab),
+            ProviderDashboardTab(
+              onTabSwitch: _switchTab,
+              refresh: _dashboardRefresh,
+            ),
             const ProviderProfileTab(),
             const ProviderMessagesTab(),
             const ProviderScheduleTab(),

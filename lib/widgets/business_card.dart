@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/business_service.dart';
 import '../utils/age.dart';
+import 'review_widgets.dart';
 
 /// Compact business card used in Discover and Search result lists.
 ///
@@ -85,6 +86,11 @@ class BusinessCard extends StatelessWidget {
                       if (category != null) _metaPill(category, true),
                       _metaPill(business.deliveryMode.label, false),
                       if (ages != null) _metaPill(ages, false),
+                      RatingBadge(
+                        average: business.avgRating,
+                        count: business.reviewCount,
+                        fontSize: 11,
+                      ),
                     ],
                   ),
                   if (location != null && location.isNotEmpty) ...[

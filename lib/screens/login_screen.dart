@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show OAuthProvider;
 import '../services/auth_service.dart';
+import 'auth_gate.dart';
+import 'forgot_password_screen.dart';
 import 'signup_screen.dart';
-import 'home_screen.dart';
-import 'provider_home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -39,18 +40,46 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final result = await _authService.login(email: email, password: password);
       if (!mounted) return;
-      final destination = result.profile.role == 'provider'
-          ? const ProviderHomeScreen()
-          : const HomeScreen();
-      Navigator.pushReplacement(
+      Navigator.pushAndRemoveUntil(
         context,
-        MaterialPageRoute(builder: (context) => destination),
+        MaterialPageRoute(builder: (context) => homeForProfile(result.profile)),
+        (_) => false,
       );
     } on AuthException catch (e) {
       if (!mounted) return;
       _showError(e.message);
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  /// Opens the Google/Apple consent page. When the browser returns, the
+  /// AuthGate underneath this screen picks up the new session and routes.
+  Future<void> _handleSocial(OAuthProvider provider) async {
+    try {
+      await _authService.signInWithProvider(provider);
+    } on AuthException catch (e) {
+      if (!mounted) return;
+      _showError(e.message);
+    }
+  }
+
+  Future<void> _openForgotPassword() async {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ForgotPasswordScreen(
+          initialEmail: _emailController.text.trim(),
+        ),
+      ),
+    );
+    if (changed == true && mounted) {
+      _passwordController.clear();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Password updated. Sign in with your new password.'),
+        ),
+      );
     }
   }
 
@@ -201,9 +230,7 @@ class _LoginScreenState extends State<LoginScreen> {
               Align(
                 alignment: Alignment.centerRight,
                 child: GestureDetector(
-                  onTap: () {
-                    // TODO: Forgot password flow
-                  },
+                  onTap: _openForgotPassword,
                   child: Text(
                     'Forgot password?',
                     style: GoogleFonts.nunito(
@@ -273,9 +300,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: () {
-                        // TODO: Google sign in
-                      },
+                      onPressed: () => _handleSocial(OAuthProvider.google),
                       icon: const Icon(Icons.g_mobiledata, size: 24),
                       label: Text(
                         'Google',
@@ -297,9 +322,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: () {
-                        // TODO: Apple sign in
-                      },
+                      onPressed: () => _handleSocial(OAuthProvider.apple),
                       icon: const Icon(Icons.apple, size: 22),
                       label: Text(
                         'Apple',

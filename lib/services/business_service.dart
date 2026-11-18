@@ -72,6 +72,8 @@ class Business {
   final int? minAge;
   final int? maxAge;
   final List<BusinessCategory> subcategories;
+  final double? avgRating;
+  final int reviewCount;
 
   Business({
     required this.id,
@@ -92,6 +94,8 @@ class Business {
     required this.minAge,
     required this.maxAge,
     required this.subcategories,
+    this.avgRating,
+    this.reviewCount = 0,
   });
 
   factory Business.fromJson(Map<String, dynamic> json) {
@@ -120,6 +124,8 @@ class Business {
       subcategories: subs
           .map((e) => BusinessCategory.fromJson(e as Map<String, dynamic>))
           .toList(),
+      avgRating: (json['avg_rating'] as num?)?.toDouble(),
+      reviewCount: (json['review_count'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -141,6 +147,31 @@ class Business {
   }
 }
 
+/// Dashboard counters for the signed-in provider's business.
+class BusinessStats {
+  final int profileViews;
+  final int inquiries;
+  final int savedCount;
+  final int reviewCount;
+  final double? avgRating;
+
+  const BusinessStats({
+    this.profileViews = 0,
+    this.inquiries = 0,
+    this.savedCount = 0,
+    this.reviewCount = 0,
+    this.avgRating,
+  });
+
+  factory BusinessStats.fromJson(Map<String, dynamic> json) => BusinessStats(
+        profileViews: (json['profile_views'] as num?)?.toInt() ?? 0,
+        inquiries: (json['inquiries'] as num?)?.toInt() ?? 0,
+        savedCount: (json['saved_count'] as num?)?.toInt() ?? 0,
+        reviewCount: (json['review_count'] as num?)?.toInt() ?? 0,
+        avgRating: (json['avg_rating'] as num?)?.toDouble(),
+      );
+}
+
 class BusinessNotFoundException extends ApiException {
   BusinessNotFoundException() : super('Business not found', statusCode: 404);
 }
@@ -149,7 +180,7 @@ class BusinessService {
   final ApiClient _client = ApiClient();
 
   String _requireToken() {
-    final token = Session.current?.accessToken;
+    final token = Session.accessToken;
     if (token == null) {
       throw ApiException('You are not signed in.');
     }
@@ -341,6 +372,27 @@ class BusinessService {
     return list
         .map((e) => Business.fromJson(e as Map<String, dynamic>))
         .toList();
+  }
+
+  // ---- stats & views ----
+
+  Future<BusinessStats> getMyStats() async {
+    final r =
+        await _client.getJson('/businesses/me/stats', token: _requireToken());
+    return BusinessStats.fromJson(r as Map<String, dynamic>);
+  }
+
+  /// Count a listing view. Best-effort: failures never surface to the UI.
+  Future<void> recordView(String businessId) async {
+    try {
+      await _client.postJson(
+        '/businesses/$businessId/view',
+        const {},
+        token: _requireToken(),
+      );
+    } on ApiException {
+      // Analytics only.
+    }
   }
 
   // ---- saved ----

@@ -1,12 +1,26 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_client.dart';
 import '../services/business_service.dart';
+import '../services/chat_service.dart';
+import '../services/event_service.dart';
+import '../utils/datetime_format.dart';
+import 'account_screen.dart';
+import 'conversation_screen.dart';
 
 class ProviderDashboardTab extends StatefulWidget {
   final void Function(int tabIndex) onTabSwitch;
 
-  const ProviderDashboardTab({super.key, required this.onTabSwitch});
+  /// Fires when the dashboard should re-fetch (e.g. the tab is re-selected
+  /// after the provider edited their schedule elsewhere).
+  final Listenable? refresh;
+
+  const ProviderDashboardTab({
+    super.key,
+    required this.onTabSwitch,
+    this.refresh,
+  });
 
   @override
   State<ProviderDashboardTab> createState() => _ProviderDashboardTabState();
@@ -14,13 +28,36 @@ class ProviderDashboardTab extends StatefulWidget {
 
 class _ProviderDashboardTabState extends State<ProviderDashboardTab> {
   final _businessService = BusinessService();
+  final _eventService = EventService();
+  final _chatService = ChatService();
+
   Business? _business;
   bool _isLoadingBusiness = true;
+  BusinessStats? _stats;
+  List<Conversation>? _inquiries;
+  Map<String, int> _unread = const {};
+  List<BusinessEvent>? _upcoming;
 
   @override
   void initState() {
     super.initState();
-    _loadBusiness();
+    widget.refresh?.addListener(_loadAll);
+    _loadAll();
+  }
+
+  @override
+  void dispose() {
+    widget.refresh?.removeListener(_loadAll);
+    super.dispose();
+  }
+
+  Future<void> _loadAll() async {
+    await Future.wait([
+      _loadBusiness(),
+      _loadStats(),
+      _loadInquiries(),
+      _loadUpcoming(),
+    ]);
   }
 
   Future<void> _loadBusiness() async {
@@ -31,38 +68,188 @@ class _ProviderDashboardTabState extends State<ProviderDashboardTab> {
         _business = business;
         _isLoadingBusiness = false;
       });
-    } on BusinessNotFoundException {
-      if (!mounted) return;
-      setState(() => _isLoadingBusiness = false);
     } on ApiException {
-      // Non-fatal for the dashboard; greeting just falls back.
+      // Not found or unreachable: the greeting falls back and the setup
+      // prompt shows.
       if (!mounted) return;
       setState(() => _isLoadingBusiness = false);
     }
   }
 
+  Future<void> _loadStats() async {
+    try {
+      final stats = await _businessService.getMyStats();
+      if (!mounted) return;
+      setState(() => _stats = stats);
+    } on ApiException {
+      if (!mounted) return;
+      setState(() => _stats ??= const BusinessStats());
+    }
+  }
+
+  Future<void> _loadInquiries() async {
+    try {
+      final conversations = await _chatService.listConversations();
+      final unread = await _chatService.unreadCounts();
+      if (!mounted) return;
+      setState(() {
+        _inquiries = conversations;
+        _unread = unread;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _inquiries ??= const []);
+    }
+  }
+
+  Future<void> _loadUpcoming() async {
+    try {
+      final events = await _eventService.listMyEvents(from: DateTime.now());
+      if (!mounted) return;
+      setState(() {
+        _upcoming = events
+            .where((e) => e.status != EventStatus.cancelled)
+            .take(3)
+            .toList();
+      });
+    } on ApiException {
+      if (!mounted) return;
+      setState(() => _upcoming ??= const []);
+    }
+  }
+
+  Future<void> _shareListing() async {
+    final b = _business;
+    if (b == null) {
+      widget.onTabSwitch(1);
+      return;
+    }
+    final where = b.deliveryMode == DeliveryMode.online
+        ? 'Online'
+        : [b.city, b.state].where((p) => p != null && p.isNotEmpty).join(', ');
+    final lines = [
+      'Find ${b.name} on Learnstead',
+      [b.category?.name, where]
+          .where((p) => p != null && p.isNotEmpty)
+          .join(' · '),
+      if ((b.website ?? '').isNotEmpty) b.website!,
+    ].where((l) => l.isNotEmpty).join('\n');
+    await Clipboard.setData(ClipboardData(text: lines));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Listing details copied to clipboard.')),
+    );
+  }
+
+  Future<void> _openAccount() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const AccountScreen()),
+    );
+  }
+
+  Future<void> _openConversation(Conversation c) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => ConversationScreen(conversation: c)),
+    );
+    if (mounted) _loadInquiries();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 20),
-          _buildGreetingHeader(),
-          const SizedBox(height: 24),
-          _buildStatCards(),
-          const SizedBox(height: 24),
-          _buildQuickActions(),
-          const SizedBox(height: 28),
-          _buildRecentInquiries(),
-          const SizedBox(height: 28),
-          _buildUpcomingSchedule(),
-          const SizedBox(height: 24),
-        ],
+    final needsSetup = !_isLoadingBusiness && _business == null;
+    return RefreshIndicator(
+      onRefresh: _loadAll,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 20),
+            _buildGreetingHeader(),
+            if (needsSetup) ...[
+              const SizedBox(height: 16),
+              _buildSetupPrompt(),
+            ],
+            const SizedBox(height: 24),
+            _buildStatCards(),
+            const SizedBox(height: 24),
+            _buildQuickActions(),
+            const SizedBox(height: 28),
+            _buildRecentInquiries(),
+            const SizedBox(height: 28),
+            _buildUpcomingSchedule(),
+            const SizedBox(height: 24),
+          ],
+        ),
       ),
     );
   }
+
+  Widget _buildSetupPrompt() {
+    return GestureDetector(
+      onTap: () => widget.onTabSwitch(1),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF5E5),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFFFCC8A)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.storefront_outlined,
+                color: Color(0xFFCC6B2E), size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Finish setting up your business so families can find you.',
+                style: GoogleFonts.nunito(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF7A4A1E),
+                ),
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: Color(0xFFCC6B2E)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _emptyCard(String text) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F9F8),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE0E7E3)),
+      ),
+      child: Text(
+        text,
+        style: GoogleFonts.nunito(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: const Color(0xFFAAAAAA),
+        ),
+      ),
+    );
+  }
+
+  Widget _sectionLoading() => const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Center(
+          child: SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      );
 
   Widget _buildGreetingHeader() {
     final hour = DateTime.now().hour;
@@ -104,20 +291,26 @@ class _ProviderDashboardTabState extends State<ProviderDashboardTab> {
             ],
           ),
         ),
-        Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            color: const Color(0xFF6F9A84).withAlpha(30),
-            shape: BoxShape.circle,
-          ),
-          child: Center(
-            child: Text(
-              initial,
-              style: GoogleFonts.nunito(
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-                color: const Color(0xFF5D7048),
+        Tooltip(
+          message: 'Account',
+          child: GestureDetector(
+            onTap: _openAccount,
+            child: Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: const Color(0xFF6F9A84).withAlpha(30),
+                shape: BoxShape.circle,
+              ),
+              child: Center(
+                child: Text(
+                  initial,
+                  style: GoogleFonts.nunito(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF5D7048),
+                  ),
+                ),
               ),
             ),
           ),
@@ -127,11 +320,19 @@ class _ProviderDashboardTabState extends State<ProviderDashboardTab> {
   }
 
   Widget _buildStatCards() {
+    final st = _stats;
+    String n(int? v) => st == null ? '…' : '${v ?? 0}';
+    final rating = st == null
+        ? '…'
+        : (st.avgRating == null ? '—' : st.avgRating!.toStringAsFixed(1));
+    final ratingLabel = (st?.reviewCount ?? 0) > 0
+        ? 'Avg Rating (${st!.reviewCount})'
+        : 'Avg Rating';
     final stats = [
-      _StatItem('Profile Views', '248', Icons.visibility_outlined),
-      _StatItem('Inquiries', '12', Icons.mail_outline),
-      _StatItem('Saved by Parents', '36', Icons.bookmark_outline),
-      _StatItem('Avg Rating', '4.9', Icons.star_outline),
+      _StatItem('Profile Views', n(st?.profileViews), Icons.visibility_outlined),
+      _StatItem('Inquiries', n(st?.inquiries), Icons.mail_outline),
+      _StatItem('Saved by Parents', n(st?.savedCount), Icons.bookmark_outline),
+      _StatItem(ratingLabel, rating, Icons.star_outline),
     ];
 
     return GridView.count(
@@ -192,7 +393,7 @@ class _ProviderDashboardTabState extends State<ProviderDashboardTab> {
     final actions = [
       _ActionItem('Edit Profile', Icons.edit_outlined, () => widget.onTabSwitch(1)),
       _ActionItem('New Event', Icons.event_outlined, () => widget.onTabSwitch(3)),
-      _ActionItem('Share Link', Icons.share_outlined, () {}),
+      _ActionItem('Share Listing', Icons.share_outlined, _shareListing),
     ];
 
     return Column(
@@ -276,23 +477,36 @@ class _ProviderDashboardTabState extends State<ProviderDashboardTab> {
           ],
         ),
         const SizedBox(height: 12),
-        _buildInquiryItem(
-          name: 'Jessica Thompson',
-          message: "Hi! I'm interested in the STEM workshop for my 8-year-old...",
-          time: '2h ago',
-          isUnread: true,
-          initials: 'JT',
-        ),
-        const SizedBox(height: 10),
-        _buildInquiryItem(
-          name: 'Michael Chen',
-          message: 'Do you offer any weekend sessions? We are available...',
-          time: '5h ago',
-          isUnread: false,
-          initials: 'MC',
-        ),
+        if (_inquiries == null)
+          _sectionLoading()
+        else if (_inquiries!.isEmpty)
+          _emptyCard('No inquiries yet. Messages from parents show up here.')
+        else
+          ..._inquiries!.take(3).map((c) {
+            final name = c.parent?.fullName ?? 'Parent';
+            final when = c.lastMessageAt ?? c.createdAt;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _buildInquiryItem(
+                name: name,
+                message: c.lastMessageBody ?? 'No messages yet.',
+                time: formatTimeAgo(when),
+                isUnread: (_unread[c.id] ?? 0) > 0,
+                initials: _initials(name),
+                onTap: () => _openConversation(c),
+              ),
+            );
+          }),
       ],
     );
+  }
+
+  String _initials(String name) {
+    final parts =
+        name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+    if (parts.isEmpty) return '?';
+    if (parts.length == 1) return parts.first[0].toUpperCase();
+    return (parts.first[0] + parts.last[0]).toUpperCase();
   }
 
   Widget _buildInquiryItem({
@@ -301,7 +515,22 @@ class _ProviderDashboardTabState extends State<ProviderDashboardTab> {
     required String time,
     required bool isUnread,
     required String initials,
+    required VoidCallback onTap,
   }) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: _inquiryCard(name, message, time, isUnread, initials),
+    );
+  }
+
+  Widget _inquiryCard(
+    String name,
+    String message,
+    String time,
+    bool isUnread,
+    String initials,
+  ) {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -343,14 +572,20 @@ class _ProviderDashboardTabState extends State<ProviderDashboardTab> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      name,
-                      style: GoogleFonts.nunito(
-                        fontSize: 14,
-                        fontWeight: isUnread ? FontWeight.w800 : FontWeight.w700,
-                        color: const Color(0xFF333333),
+                    Expanded(
+                      child: Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.nunito(
+                          fontSize: 14,
+                          fontWeight:
+                              isUnread ? FontWeight.w800 : FontWeight.w700,
+                          color: const Color(0xFF333333),
+                        ),
                       ),
                     ),
+                    const SizedBox(width: 8),
                     Text(
                       time,
                       style: GoogleFonts.nunito(
@@ -426,21 +661,29 @@ class _ProviderDashboardTabState extends State<ProviderDashboardTab> {
           ],
         ),
         const SizedBox(height: 12),
-        _buildScheduleItem(
-          month: 'FEB',
-          day: '18',
-          title: 'Creative Arts Workshop',
-          time: '10:00 AM – 12:00 PM',
-          spotsLeft: 3,
-        ),
-        const SizedBox(height: 10),
-        _buildScheduleItem(
-          month: 'FEB',
-          day: '20',
-          title: 'STEM Exploration Session',
-          time: '2:00 PM – 4:00 PM',
-          spotsLeft: 7,
-        ),
+        if (_upcoming == null)
+          _sectionLoading()
+        else if (_upcoming!.isEmpty)
+          _emptyCard('Nothing coming up. Add an event from the Schedule tab.')
+        else
+          ..._upcoming!.map((e) {
+            final sameDay = isSameDay(e.startsAt, DateTime.now());
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _buildScheduleItem(
+                month: monthAbbr(e.startsAt),
+                day: '${e.startsAt.day}',
+                title: e.title,
+                time: formatTimeRange(e.startsAt, e.endsAt),
+                footnote: [
+                  if (sameDay) 'Today',
+                  if (e.status == EventStatus.pending) 'Pending',
+                  if (e.capacity != null)
+                    '${e.capacity} spot${e.capacity == 1 ? '' : 's'}',
+                ].join(' · '),
+              ),
+            );
+          }),
       ],
     );
   }
@@ -450,7 +693,7 @@ class _ProviderDashboardTabState extends State<ProviderDashboardTab> {
     required String day,
     required String title,
     required String time,
-    required int spotsLeft,
+    required String footnote,
   }) {
     return Container(
       padding: const EdgeInsets.all(14),
@@ -518,15 +761,17 @@ class _ProviderDashboardTabState extends State<ProviderDashboardTab> {
                     color: const Color(0xFF999999),
                   ),
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  '$spotsLeft spots left',
-                  style: GoogleFonts.nunito(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFFCC6B2E),
+                if (footnote.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    footnote,
+                    style: GoogleFonts.nunito(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFFCC6B2E),
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),

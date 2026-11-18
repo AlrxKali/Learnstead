@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show OAuthProvider;
 import '../services/auth_service.dart';
 import 'home_screen.dart';
 import 'business_form_screen.dart';
@@ -83,15 +84,34 @@ class _SignupScreenState extends State<SignupScreen> {
       final destination = result.profile.role == 'provider'
           ? const BusinessFormScreen()
           : const HomeScreen();
-      Navigator.pushReplacement(
+      Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (context) => destination),
+        (_) => false,
       );
+    } on EmailConfirmationRequiredException catch (e) {
+      // Account created, but the project requires confirming the email
+      // before the first sign-in. Send them back to the login screen.
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
+      Navigator.pop(context);
     } on AuthException catch (e) {
       if (!mounted) return;
       _showError(e.message);
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  /// Google/Apple signup: role and zip are collected afterwards on the
+  /// "One more step" screen, once the browser returns.
+  Future<void> _handleSocial(OAuthProvider provider) async {
+    try {
+      await _authService.signInWithProvider(provider);
+    } on AuthException catch (e) {
+      if (!mounted) return;
+      _showError(e.message);
     }
   }
 
@@ -488,9 +508,7 @@ class _SignupScreenState extends State<SignupScreen> {
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: () {
-                        // TODO: Google sign up
-                      },
+                      onPressed: () => _handleSocial(OAuthProvider.google),
                       icon: const Icon(Icons.g_mobiledata, size: 24),
                       label: Text(
                         'Google',
@@ -512,9 +530,7 @@ class _SignupScreenState extends State<SignupScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: () {
-                        // TODO: Apple sign up
-                      },
+                      onPressed: () => _handleSocial(OAuthProvider.apple),
                       icon: const Icon(Icons.apple, size: 22),
                       label: Text(
                         'Apple',

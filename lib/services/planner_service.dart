@@ -99,7 +99,7 @@ class PlannerService {
   final ApiClient _client = ApiClient();
 
   String _requireToken() {
-    final t = Session.current?.accessToken;
+    final t = Session.accessToken;
     if (t == null) throw ApiException('You are not signed in.');
     return t;
   }

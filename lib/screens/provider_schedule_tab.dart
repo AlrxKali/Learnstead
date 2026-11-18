@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../services/api_client.dart';
+import '../services/event_service.dart';
+import '../utils/datetime_format.dart';
+import '../widgets/event_form_sheet.dart';
 
 class ProviderScheduleTab extends StatefulWidget {
   const ProviderScheduleTab({super.key});
@@ -9,68 +13,87 @@ class ProviderScheduleTab extends StatefulWidget {
 }
 
 class _ProviderScheduleTabState extends State<ProviderScheduleTab> {
+  final _eventService = EventService();
+
   late DateTime _selectedDate;
   late DateTime _weekStart;
 
-  // Mock events keyed by day-of-month
-  final Map<int, List<_Event>> _events = {
-    17: [
-      const _Event(
-        title: 'Creative Arts Workshop',
-        time: '10:00 AM – 12:00 PM',
-        attendees: 8,
-        status: 'Confirmed',
-        type: _EventType.session,
-      ),
-      const _Event(
-        title: 'Parent Consultation',
-        time: '1:00 PM – 1:30 PM',
-        attendees: 1,
-        status: 'Pending',
-        type: _EventType.consultation,
-      ),
-    ],
-    18: [
-      const _Event(
-        title: 'STEM Exploration',
-        time: '2:00 PM – 4:00 PM',
-        attendees: 10,
-        status: 'Confirmed',
-        type: _EventType.session,
-      ),
-    ],
-    19: [
-      const _Event(
-        title: 'Nature Walk & Journaling',
-        time: '9:00 AM – 11:00 AM',
-        attendees: 6,
-        status: 'Confirmed',
-        type: _EventType.session,
-      ),
-      const _Event(
-        title: 'New Family Tour',
-        time: '3:00 PM – 3:45 PM',
-        attendees: 2,
-        status: 'Confirmed',
-        type: _EventType.consultation,
-      ),
-    ],
-    20: [
-      const _Event(
-        title: 'Small Group Reading',
-        time: '10:00 AM – 11:30 AM',
-        attendees: 4,
-        status: 'Confirmed',
-        type: _EventType.session,
-      ),
-    ],
-  };
+  /// Events whose start falls in the visible week.
+  List<BusinessEvent> _events = [];
+  bool _isLoading = true;
+  String? _loadError;
+  bool _noBusiness = false;
+  int _loadSeq = 0;
 
   @override
   void initState() {
     super.initState();
     _selectedDate = DateTime.now();
     _weekStart = _getWeekStart(_selectedDate);
+    _loadWeek();
+  }
+
+  /// Select [date]; refetch only if that moves to a different week.
+  void _select(DateTime date) {
+    final newWeek = _getWeekStart(date);
+    final weekChanged = !isSameDay(newWeek, _weekStart);
+    setState(() {
+      _selectedDate = date;
+      _weekStart = newWeek;
+    });
+    if (weekChanged) _loadWeek();
+  }
+
+  Future<void> _loadWeek() async {
+    final seq = ++_loadSeq;
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
+    try {
+      final events = await _eventService.listMyEvents(
+        from: _weekStart,
+        to: _weekStart.add(const Duration(days: 7)),
+      );
+      if (!mounted || seq != _loadSeq) return;
+      setState(() {
+        _events = events;
+        _isLoading = false;
+        _noBusiness = false;
+      });
+    } on ApiException catch (e) {
+      if (!mounted || seq != _loadSeq) return;
+      setState(() {
+        _events = [];
+        _isLoading = false;
+        _noBusiness = e.statusCode == 404;
+        _loadError = e.statusCode == 404 ? null : e.message;
+      });
+    }
+  }
+
+  List<BusinessEvent> _eventsOn(DateTime day) =>
+      _events.where((e) => isSameDay(e.startsAt, day)).toList();
+
+  Future<void> _openForm({BusinessEvent? existing}) async {
+    if (_noBusiness) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Set up your business first (My Business tab).'),
+        ),
+      );
+      return;
+    }
+    final changed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => EventFormSheet(
+        initialDay: _selectedDate,
+        existing: existing,
+      ),
+    );
+    if (changed == true && mounted) _loadWeek();
   }
 
   DateTime _getWeekStart(DateTime date) {
@@ -97,11 +120,6 @@ class _ProviderScheduleTabState extends State<ProviderScheduleTab> {
   }
 
   Widget _buildMonthHeader() {
-    final months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December',
-    ];
-
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Row(
@@ -110,16 +128,9 @@ class _ProviderScheduleTabState extends State<ProviderScheduleTab> {
           Row(
             children: [
               GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _selectedDate = DateTime(
-                      _selectedDate.year,
-                      _selectedDate.month - 1,
-                      _selectedDate.day,
-                    );
-                    _weekStart = _getWeekStart(_selectedDate);
-                  });
-                },
+                onTap: () => _select(
+                  _selectedDate.subtract(const Duration(days: 7)),
+                ),
                 child: const Icon(
                   Icons.chevron_left,
                   color: Color(0xFF555555),
@@ -128,7 +139,7 @@ class _ProviderScheduleTabState extends State<ProviderScheduleTab> {
               ),
               const SizedBox(width: 8),
               Text(
-                '${months[_selectedDate.month - 1]} ${_selectedDate.year}',
+                '${monthNames[_selectedDate.month - 1]} ${_selectedDate.year}',
                 style: GoogleFonts.nunito(
                   fontSize: 18,
                   fontWeight: FontWeight.w800,
@@ -137,16 +148,9 @@ class _ProviderScheduleTabState extends State<ProviderScheduleTab> {
               ),
               const SizedBox(width: 8),
               GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _selectedDate = DateTime(
-                      _selectedDate.year,
-                      _selectedDate.month + 1,
-                      _selectedDate.day,
-                    );
-                    _weekStart = _getWeekStart(_selectedDate);
-                  });
-                },
+                onTap: () => _select(
+                  _selectedDate.add(const Duration(days: 7)),
+                ),
                 child: const Icon(
                   Icons.chevron_right,
                   color: Color(0xFF555555),
@@ -156,12 +160,7 @@ class _ProviderScheduleTabState extends State<ProviderScheduleTab> {
             ],
           ),
           GestureDetector(
-            onTap: () {
-              setState(() {
-                _selectedDate = DateTime.now();
-                _weekStart = _getWeekStart(_selectedDate);
-              });
-            },
+            onTap: () => _select(DateTime.now()),
             child: Container(
               padding:
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -193,18 +192,15 @@ class _ProviderScheduleTabState extends State<ProviderScheduleTab> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: List.generate(7, (i) {
-          final day = _weekStart.add(Duration(days: i));
-          final isSelected = day.day == _selectedDate.day &&
-              day.month == _selectedDate.month &&
-              day.year == _selectedDate.year;
-          final isToday = day.day == DateTime.now().day &&
-              day.month == DateTime.now().month &&
-              day.year == DateTime.now().year;
-          final hasEvents = _events.containsKey(day.day) &&
-              day.month == _selectedDate.month;
+          // Calendar arithmetic (not Duration) so DST shifts can't skip a day.
+          final day = DateTime(
+              _weekStart.year, _weekStart.month, _weekStart.day + i);
+          final isSelected = isSameDay(day, _selectedDate);
+          final isToday = isSameDay(day, DateTime.now());
+          final hasEvents = _eventsOn(day).isNotEmpty;
 
           return GestureDetector(
-            onTap: () => setState(() => _selectedDate = day),
+            onTap: () => _select(day),
             child: Container(
               width: 42,
               padding: const EdgeInsets.symmetric(vertical: 8),
@@ -262,16 +258,7 @@ class _ProviderScheduleTabState extends State<ProviderScheduleTab> {
   }
 
   Widget _buildSelectedDateHeader() {
-    final weekdays = [
-      'Monday', 'Tuesday', 'Wednesday', 'Thursday',
-      'Friday', 'Saturday', 'Sunday',
-    ];
-    final months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December',
-    ];
-    final label =
-        '${weekdays[_selectedDate.weekday - 1]}, ${months[_selectedDate.month - 1]} ${_selectedDate.day}';
+    final label = formatLongDate(_selectedDate);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -287,9 +274,7 @@ class _ProviderScheduleTabState extends State<ProviderScheduleTab> {
             ),
           ),
           GestureDetector(
-            onTap: () {
-              // TODO: Add event flow
-            },
+            onTap: () => _openForm(),
             child: Container(
               padding:
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -320,176 +305,230 @@ class _ProviderScheduleTabState extends State<ProviderScheduleTab> {
   }
 
   Widget _buildEventList() {
-    final dayEvents = _events[_selectedDate.day];
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_loadError != null) {
+      return _centerMessage(
+        icon: Icons.error_outline,
+        iconColor: const Color(0xFFB23A48),
+        title: _loadError!,
+        action: TextButton(
+          onPressed: _loadWeek,
+          child: Text(
+            'Retry',
+            style: GoogleFonts.nunito(
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF5D7048),
+            ),
+          ),
+        ),
+      );
+    }
+    if (_noBusiness) {
+      return _centerMessage(
+        icon: Icons.storefront_outlined,
+        title: 'Set up your business first',
+        subtitle: 'Your schedule lives on your business listing.',
+      );
+    }
 
-    if (dayEvents == null || dayEvents.isEmpty) {
-      return Center(
+    final dayEvents = _eventsOn(_selectedDate);
+    if (dayEvents.isEmpty) {
+      return _centerMessage(
+        icon: Icons.event_available_outlined,
+        title: 'No events scheduled',
+        subtitle: 'Tap + Add Event to create one',
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadWeek,
+      child: ListView.separated(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        itemCount: dayEvents.length,
+        separatorBuilder: (_, _) => const SizedBox(height: 10),
+        itemBuilder: (context, index) => _buildEventCard(dayEvents[index]),
+      ),
+    );
+  }
+
+  Widget _centerMessage({
+    required IconData icon,
+    Color? iconColor,
+    required String title,
+    String? subtitle,
+    Widget? action,
+  }) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              Icons.event_available_outlined,
+              icon,
               size: 48,
-              color: const Color(0xFFC5D1C9).withAlpha(150),
+              color: iconColor ?? const Color(0xFFC5D1C9).withAlpha(150),
             ),
             const SizedBox(height: 12),
             Text(
-              'No events scheduled',
+              title,
+              textAlign: TextAlign.center,
               style: GoogleFonts.nunito(
                 fontSize: 15,
                 fontWeight: FontWeight.w700,
                 color: const Color(0xFF999999),
               ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              'Tap + Add Event to create one',
-              style: GoogleFonts.nunito(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: const Color(0xFFC5D1C9),
+            if (subtitle != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.nunito(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFFC5D1C9),
+                ),
               ),
+            ],
+            ?action,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEventCard(BusinessEvent event) {
+    final cancelled = event.status == EventStatus.cancelled;
+    final barColor = cancelled
+        ? const Color(0xFFBBBBBB)
+        : event.type == EventType.session
+            ? const Color(0xFF5D7048)
+            : const Color(0xFFCC6B2E);
+    final statusColor = switch (event.status) {
+      EventStatus.confirmed => const Color(0xFF5D7048),
+      EventStatus.pending => const Color(0xFFCC6B2E),
+      EventStatus.cancelled => const Color(0xFF999999),
+    };
+
+    return GestureDetector(
+      onTap: () => _openForm(existing: event),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withAlpha(20),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
             ),
           ],
         ),
-      );
-    }
-
-    return ListView.separated(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      itemCount: dayEvents.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 10),
-      itemBuilder: (context, index) {
-        final event = dayEvents[index];
-        return _buildEventCard(event);
-      },
-    );
-  }
-
-  Widget _buildEventCard(_Event event) {
-    final barColor = event.type == _EventType.session
-        ? const Color(0xFF5D7048)
-        : const Color(0xFFCC6B2E);
-
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withAlpha(20),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          // Colored bar
-          Container(
-            width: 4,
-            height: 80,
-            decoration: BoxDecoration(
-              color: barColor,
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(12),
-                bottomLeft: Radius.circular(12),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                width: 4,
+                decoration: BoxDecoration(
+                  color: barColor,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(12),
+                    bottomLeft: Radius.circular(12),
+                  ),
+                ),
               ),
-            ),
-          ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: Text(
-                          event.title,
-                          style: GoogleFonts.nunito(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w800,
-                            color: const Color(0xFF333333),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              event.title,
+                              style: GoogleFonts.nunito(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                                color: cancelled
+                                    ? const Color(0xFF999999)
+                                    : const Color(0xFF333333),
+                                decoration: cancelled
+                                    ? TextDecoration.lineThrough
+                                    : null,
+                              ),
+                            ),
                           ),
-                        ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: statusColor.withAlpha(20),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              event.status.label,
+                              style: GoogleFonts.nunito(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: statusColor,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: event.status == 'Confirmed'
-                              ? const Color(0xFF5D7048).withAlpha(20)
-                              : const Color(0xFFCC6B2E).withAlpha(20),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          event.status,
-                          style: GoogleFonts.nunito(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: event.status == 'Confirmed'
-                                ? const Color(0xFF5D7048)
-                                : const Color(0xFFCC6B2E),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 16,
+                        runSpacing: 4,
+                        children: [
+                          _meta(Icons.access_time_outlined,
+                              formatTimeRange(event.startsAt, event.endsAt)),
+                          _meta(
+                            event.type == EventType.session
+                                ? Icons.groups_outlined
+                                : Icons.forum_outlined,
+                            event.type.label,
                           ),
-                        ),
+                          if (event.capacity != null)
+                            _meta(
+                              Icons.people_outline,
+                              '${event.capacity} spot${event.capacity == 1 ? '' : 's'}',
+                            ),
+                        ],
                       ),
                     ],
                   ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      const Icon(Icons.access_time_outlined,
-                          size: 14, color: Color(0xFF999999)),
-                      const SizedBox(width: 4),
-                      Text(
-                        event.time,
-                        style: GoogleFonts.nunito(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: const Color(0xFF999999),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      const Icon(Icons.people_outline,
-                          size: 14, color: Color(0xFF999999)),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${event.attendees} attendee${event.attendees == 1 ? '' : 's'}',
-                        style: GoogleFonts.nunito(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: const Color(0xFF999999),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                ),
               ),
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
-}
 
-enum _EventType { session, consultation }
-
-class _Event {
-  final String title;
-  final String time;
-  final int attendees;
-  final String status;
-  final _EventType type;
-
-  const _Event({
-    required this.title,
-    required this.time,
-    required this.attendees,
-    required this.status,
-    required this.type,
-  });
+  Widget _meta(IconData icon, String text) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: const Color(0xFF999999)),
+        const SizedBox(width: 4),
+        Text(
+          text,
+          style: GoogleFonts.nunito(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: const Color(0xFF999999),
+          ),
+        ),
+      ],
+    );
+  }
 }

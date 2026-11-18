@@ -9,6 +9,7 @@ import '../utils/category_image.dart';
 import '../widgets/business_card.dart';
 import '../widgets/business_detail_sheet.dart';
 import '../widgets/chats_badged_icon.dart';
+import 'account_screen.dart';
 import 'chats_tab.dart';
 import 'planner_tab.dart';
 import 'saved_tab.dart';
@@ -178,9 +179,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ? const SavedTab()
                     : _selectedIndex == 3
                         ? const ChatsTab()
-                        : _selectedIndex == 4
-                            ? const PlannerTab()
-                            : _buildComingSoonTab(),
+                        : const PlannerTab(),
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
@@ -206,17 +205,13 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildComingSoonTab() {
-    return Center(
-      child: Text(
-        'Coming soon',
-        style: GoogleFonts.nunito(
-          fontSize: 16,
-          fontWeight: FontWeight.w700,
-          color: const Color(0xFF999999),
-        ),
-      ),
+  Future<void> _openAccount() async {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => const AccountScreen()),
     );
+    // The home zip drives which local programs show up.
+    if (changed == true && mounted) _refresh();
   }
 
   Widget _buildDiscoverTab() {
@@ -258,6 +253,20 @@ class _HomeScreenState extends State<HomeScreen> {
           'static/home.png',
           width: double.infinity,
           fit: BoxFit.contain,
+        ),
+        Positioned(
+          top: 10,
+          right: 12,
+          child: Material(
+            color: Colors.white.withAlpha(230),
+            shape: const CircleBorder(),
+            elevation: 2,
+            child: IconButton(
+              tooltip: 'Account',
+              onPressed: _openAccount,
+              icon: const Icon(Icons.person_outline, color: activeColor),
+            ),
+          ),
         ),
         Positioned(
           bottom: 16,

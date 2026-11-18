@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../screens/conversation_screen.dart';
+import '../services/api_client.dart';
+import '../services/auth_service.dart';
 import '../services/business_service.dart';
 import '../services/chat_service.dart';
+import '../services/event_service.dart';
+import '../services/review_service.dart';
 import '../utils/age.dart';
 import '../utils/category_image.dart';
+import '../utils/datetime_format.dart';
 import '../utils/phone.dart';
+import 'review_widgets.dart';
 
 /// Full-detail bottom sheet for a business. Used from Discover, Search,
 /// and Saved lists.
@@ -189,6 +195,9 @@ class BusinessDetailSheet extends StatelessWidget {
             _detailRow(Icons.place_outlined, b.formattedAddress),
           const SizedBox(height: 20),
           _MessageButton(business: b),
+          // Keyed so the section (and its one-time view count) survives
+          // the parent rebuilding this sheet, e.g. when the heart toggles.
+          _EngagementSection(key: ValueKey('engagement-${b.id}'), business: b),
         ],
       ),
     );
@@ -320,6 +329,298 @@ class _MessageButtonState extends State<_MessageButton> {
             borderRadius: BorderRadius.circular(12),
           ),
         ),
+      ),
+    );
+  }
+}
+
+
+// ============================================================
+//  Upcoming events + reviews (loaded when the sheet opens)
+// ============================================================
+
+class _EngagementSection extends StatefulWidget {
+  final Business business;
+  const _EngagementSection({super.key, required this.business});
+
+  @override
+  State<_EngagementSection> createState() => _EngagementSectionState();
+}
+
+class _EngagementSectionState extends State<_EngagementSection> {
+  static const Color _brand = Color(0xFF5D7048);
+
+  final _reviewService = ReviewService();
+
+  List<BusinessEvent> _events = const [];
+  List<Review>? _reviews; // null while loading
+  bool _savingReview = false;
+
+  String get _businessId => widget.business.id;
+
+  /// Only parents review, and never their own listing.
+  bool get _canReview {
+    final profile = Session.current?.profile;
+    return profile != null &&
+        profile.role == 'parent' &&
+        profile.id != widget.business.ownerId;
+  }
+
+  Review? get _myReview {
+    for (final r in _reviews ?? const <Review>[]) {
+      if (r.isMine) return r;
+    }
+    return null;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // Opening the sheet counts as a listing view (deduped server-side).
+    BusinessService().recordView(_businessId);
+    _loadEvents();
+    _loadReviews();
+  }
+
+  Future<void> _loadEvents() async {
+    try {
+      final events =
+          await EventService().listUpcomingForBusiness(_businessId, limit: 3);
+      if (!mounted) return;
+      setState(() => _events = events);
+    } on ApiException {
+      // Optional section: stay hidden on failure.
+    }
+  }
+
+  Future<void> _loadReviews() async {
+    try {
+      final reviews = await _reviewService.listForBusiness(_businessId);
+      if (!mounted) return;
+      setState(() => _reviews = reviews);
+    } on ApiException {
+      if (!mounted) return;
+      setState(() => _reviews ??= const []);
+    }
+  }
+
+  Future<void> _writeReview() async {
+    final result = await showReviewDialog(context, existing: _myReview);
+    if (result == null || !mounted) return;
+    setState(() => _savingReview = true);
+    try {
+      await _reviewService.saveMine(
+        _businessId,
+        rating: result.rating,
+        comment: result.comment.isEmpty ? null : result.comment,
+      );
+      await _loadReviews();
+    } on ApiException catch (e) {
+      _showError(e.message);
+    } finally {
+      if (mounted) setState(() => _savingReview = false);
+    }
+  }
+
+  Future<void> _deleteReview() async {
+    setState(() => _savingReview = true);
+    try {
+      await _reviewService.deleteMine(_businessId);
+      await _loadReviews();
+    } on ApiException catch (e) {
+      _showError(e.message);
+    } finally {
+      if (mounted) setState(() => _savingReview = false);
+    }
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: const Color(0xFFB23A48)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final reviews = _reviews;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_events.isNotEmpty) ...[
+          const SizedBox(height: 24),
+          _heading('Upcoming'),
+          const SizedBox(height: 8),
+          ..._events.map(_eventRow),
+        ],
+        const SizedBox(height: 24),
+        Row(
+          children: [
+            Expanded(child: _heading('Reviews')),
+            if (reviews != null)
+              RatingBadge(
+                average: averageRating(reviews),
+                count: reviews.length,
+                fontSize: 13,
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (reviews == null)
+          const Padding(
+            padding: EdgeInsets.all(12),
+            child: Center(
+              child: SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          )
+        else ...[
+          if (reviews.isEmpty)
+            Text(
+              _canReview
+                  ? 'No reviews yet. Be the first to share your experience.'
+                  : 'No reviews yet.',
+              style: GoogleFonts.nunito(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFFAAAAAA),
+              ),
+            ),
+          ...reviews.map(
+            (r) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: ReviewTile(review: r),
+            ),
+          ),
+          if (_canReview) ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _savingReview ? null : _writeReview,
+                  icon: const Icon(Icons.rate_review_outlined, size: 16),
+                  label: Text(
+                    _myReview == null ? 'Write a review' : 'Edit your review',
+                    style: GoogleFonts.nunito(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _brand,
+                    side: const BorderSide(color: Color(0xFFC5D1C9)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+                if (_myReview != null)
+                  TextButton(
+                    onPressed: _savingReview ? null : _deleteReview,
+                    child: Text(
+                      'Remove',
+                      style: GoogleFonts.nunito(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFFB23A48),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ],
+    );
+  }
+
+  Widget _heading(String text) => Text(
+        text,
+        style: GoogleFonts.nunito(
+          fontSize: 15,
+          fontWeight: FontWeight.w800,
+          color: const Color(0xFF333333),
+        ),
+      );
+
+  Widget _eventRow(BusinessEvent e) {
+    final details = [
+      '${formatShortDate(e.startsAt)} · ${formatTimeRange(e.startsAt, e.endsAt)}',
+      if (e.capacity != null) '${e.capacity} spot${e.capacity == 1 ? '' : 's'}',
+    ].join(' · ');
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 44,
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            decoration: BoxDecoration(
+              color: _brand,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              children: [
+                Text(
+                  monthAbbr(e.startsAt),
+                  style: GoogleFonts.nunito(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white.withAlpha(200),
+                  ),
+                ),
+                Text(
+                  '${e.startsAt.day}',
+                  style: GoogleFonts.nunito(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                    height: 1.1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  e.title,
+                  style: GoogleFonts.nunito(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF333333),
+                  ),
+                ),
+                Text(
+                  details,
+                  style: GoogleFonts.nunito(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF999999),
+                  ),
+                ),
+                if ((e.description ?? '').isNotEmpty)
+                  Text(
+                    e.description!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.nunito(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF777777),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

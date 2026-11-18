@@ -236,6 +236,17 @@ class ChatService {
         .eq('id', conversationId);
   }
 
+  /// One-shot unread counts keyed by conversation ID (only > 0 present).
+  Future<Map<String, int>> unreadCounts() async {
+    final rows = await _sb.rpc('get_unread_counts');
+    final out = <String, int>{};
+    for (final row in rows as List) {
+      final r = row as Map<String, dynamic>;
+      out[r['conversation_id'] as String] = (r['unread_count'] as num).toInt();
+    }
+    return out;
+  }
+
   /// Stream of per-conversation unread counts for the current user.
   ///
   /// Emits an initial map immediately, then re-emits whenever a new

@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_client.dart';
 import '../services/business_service.dart';
+import '../services/review_service.dart';
 import '../utils/age.dart';
 import '../utils/phone.dart';
+import '../widgets/review_widgets.dart';
 import 'business_form_screen.dart';
 
 class ProviderProfileTab extends StatefulWidget {
@@ -16,7 +18,10 @@ class ProviderProfileTab extends StatefulWidget {
 class _ProviderProfileTabState extends State<ProviderProfileTab> {
   final _businessService = BusinessService();
 
+  final _reviewService = ReviewService();
+
   Business? _business;
+  List<Review>? _reviews; // null while loading
   bool _isLoading = true;
   bool _notFound = false;
   String? _loadError;
@@ -40,6 +45,7 @@ class _ProviderProfileTabState extends State<ProviderProfileTab> {
         _business = business;
         _isLoading = false;
       });
+      _loadReviews(business.id);
     } on BusinessNotFoundException {
       if (!mounted) return;
       setState(() {
@@ -52,6 +58,17 @@ class _ProviderProfileTabState extends State<ProviderProfileTab> {
         _isLoading = false;
         _loadError = e.message;
       });
+    }
+  }
+
+  Future<void> _loadReviews(String businessId) async {
+    try {
+      final reviews = await _reviewService.listForBusiness(businessId);
+      if (!mounted) return;
+      setState(() => _reviews = reviews);
+    } on ApiException {
+      if (!mounted) return;
+      setState(() => _reviews ??= const []);
     }
   }
 
@@ -82,33 +99,37 @@ class _ProviderProfileTabState extends State<ProviderProfileTab> {
     }
 
     final business = _business!;
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildCoverAndLogo(business),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 50),
-                _buildNameAndEditButton(business),
-                const SizedBox(height: 16),
-                _buildListingStatus(),
-                const SizedBox(height: 24),
-                _buildAboutSection(),
-                const SizedBox(height: 24),
-                _buildServicesSection(),
-                const SizedBox(height: 24),
-                _buildDetailsSection(business),
-                const SizedBox(height: 24),
-                _buildReviewsSection(),
-                const SizedBox(height: 24),
-              ],
+    return RefreshIndicator(
+      onRefresh: _loadBusiness,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildCoverAndLogo(business),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 50),
+                  _buildNameAndEditButton(business),
+                  const SizedBox(height: 16),
+                  _buildListingStatus(),
+                  const SizedBox(height: 24),
+                  _buildAboutSection(),
+                  const SizedBox(height: 24),
+                  _buildServicesSection(),
+                  const SizedBox(height: 24),
+                  _buildDetailsSection(business),
+                  const SizedBox(height: 24),
+                  _buildReviewsSection(),
+                  const SizedBox(height: 24),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -159,7 +180,10 @@ class _ProviderProfileTabState extends State<ProviderProfileTab> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF5D7048),
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 14,
+                ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
                 ),
@@ -215,7 +239,9 @@ class _ProviderProfileTabState extends State<ProviderProfileTab> {
   }
 
   Widget _buildCoverAndLogo(Business business) {
-    final initial = business.name.isNotEmpty ? business.name[0].toUpperCase() : '?';
+    final initial = business.name.isNotEmpty
+        ? business.name[0].toUpperCase()
+        : '?';
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -437,8 +463,10 @@ class _ProviderProfileTabState extends State<ProviderProfileTab> {
             runSpacing: 8,
             children: services.map((service) {
               return Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFF6F9A84).withAlpha(20),
                   borderRadius: BorderRadius.circular(20),
@@ -460,7 +488,8 @@ class _ProviderProfileTabState extends State<ProviderProfileTab> {
 
   Widget _buildDetailsSection(Business business) {
     final ageRange = formatAgeRange(business.minAge, business.maxAge);
-    final showAddress = business.deliveryMode != DeliveryMode.online &&
+    final showAddress =
+        business.deliveryMode != DeliveryMode.online &&
         business.formattedAddress != null;
     final details = <_DetailRow>[
       if (ageRange != null)
@@ -538,6 +567,7 @@ class _ProviderProfileTabState extends State<ProviderProfileTab> {
   }
 
   Widget _buildReviewsSection() {
+    final reviews = _reviews;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -552,25 +582,51 @@ class _ProviderProfileTabState extends State<ProviderProfileTab> {
                 color: const Color(0xFF333333),
               ),
             ),
+            if (reviews != null)
+              RatingBadge(
+                average: averageRating(reviews),
+                count: reviews.length,
+                fontSize: 13,
+              ),
           ],
         ),
         const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF7F9F8),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFE0E7E3)),
-          ),
-          child: Text(
-            'No reviews yet.',
-            style: GoogleFonts.nunito(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: const Color(0xFFAAAAAA),
+        if (reviews == null)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.all(12),
+              child: SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          )
+        else if (reviews.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF7F9F8),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE0E7E3)),
+            ),
+            child: Text(
+              'No reviews yet. Reviews from parents will show up here.',
+              style: GoogleFonts.nunito(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFFAAAAAA),
+              ),
+            ),
+          )
+        else
+          ...reviews.map(
+            (r) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: ReviewTile(review: r),
             ),
           ),
-        ),
       ],
     );
   }
